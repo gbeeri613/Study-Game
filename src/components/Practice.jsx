@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { applyFilters, buildSession, displayToOriginal, originalToDisplay } from '../lib/session.js'
+import { applyFilters, buildSession, displayToOriginal } from '../lib/session.js'
 import { courseLabel } from '../data/labels.js'
 
 // Hebrew letter prefixes for options (א, ב, ג, ...)
@@ -10,14 +10,22 @@ export default function Practice({ db, dispatch, config, onExit }) {
   // questions matching the filters at start time.
   const session = useMemo(() => {
     const matching = applyFilters(db.questions, config)
-    return buildSession(matching, config)
+    return buildSession(matching, {
+      order: config.shuffleQuestions ? 'shuffle' : 'sequential',
+      shuffleOptions: config.shuffleOptions,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [idx, setIdx] = useState(0)
-  // reveal is per-question: null until the user picks. Stores the display slot
-  // the user tapped this round.
-  const [revealSlot, setRevealSlot] = useState(null)
+  // Per-question interaction state:
+  //  - selectedSlot: the display slot currently shown as picked (null before the
+  //    first pick).
+  //  - attempted: whether the FIRST guess this session was already recorded. The
+  //    first pick is what gets saved; picking again afterwards gives feedback
+  //    without changing the recorded correct/incorrect.
+  const [selectedSlot, setSelectedSlot] = useState(null)
+  const [attempted, setAttempted] = useState(false)
 
   const item = session[idx]
   // Live question (state may have been updated by a prior answer this session).
@@ -28,54 +36,56 @@ export default function Practice({ db, dispatch, config, onExit }) {
 
   const atEnd = idx >= session.length - 1
 
+  const picked = selectedSlot !== null
+  const pickedOriginal = picked ? displayToOriginal(item, selectedSlot) : null
+  const pickedCorrect = picked && pickedOriginal === liveQuestion?.answer
+
   function goNext() {
-    if (!atEnd) {
-      setIdx((i) => i + 1)
-      setRevealSlot(null)
+    if (atEnd) {
+      onExit()
+      return
     }
-  }
-  function goPrev() {
-    if (idx > 0) {
-      setIdx((i) => i - 1)
-      setRevealSlot(null)
-    }
+    setIdx((i) => i + 1)
+    setSelectedSlot(null)
+    setAttempted(false)
   }
 
   function pick(displaySlot) {
-    if (revealSlot !== null) return // already answered this round
+    if (pickedCorrect) return // solved — options are locked
     const originalIndex = displayToOriginal(item, displaySlot)
     const correct = originalIndex === liveQuestion.answer
-    setRevealSlot(displaySlot)
-    dispatch({ type: 'RECORD_ANSWER', id: liveQuestion.id, choice: originalIndex, correct })
+    setSelectedSlot(displaySlot)
+    // Only the first attempt is recorded — later picks never overwrite it.
+    if (!attempted) {
+      setAttempted(true)
+      dispatch({ type: 'RECORD_ANSWER', id: liveQuestion.id, choice: originalIndex, correct })
+    }
   }
 
-  // Keyboard: number keys pick an option; Enter/Space advance after reveal.
+  // Keyboard: number keys pick an option (until solved); Enter/Space advance once
+  // any answer has been picked.
   useEffect(() => {
     function onKey(e) {
       if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
       if (!item) return
       if (e.key >= '1' && e.key <= '9') {
         const slot = Number(e.key) - 1
-        if (slot < liveQuestion.options.length) {
+        if (!pickedCorrect && slot < liveQuestion.options.length) {
           e.preventDefault()
           pick(slot)
         }
-      } else if (e.key === 'Enter' || e.key === ' ') {
-        if (revealSlot !== null) {
+      } else if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowLeft') {
+        // RTL: left arrow = next
+        if (attempted) {
           e.preventDefault()
           goNext()
         }
-      } else if (e.key === 'ArrowLeft') {
-        // RTL: left arrow = next
-        goNext()
-      } else if (e.key === 'ArrowRight') {
-        goPrev()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item, revealSlot, liveQuestion, idx, atEnd])
+  }, [item, selectedSlot, attempted, liveQuestion, idx, atEnd])
 
   if (session.length === 0) {
     return (
@@ -86,9 +96,6 @@ export default function Practice({ db, dispatch, config, onExit }) {
     )
   }
 
-  const revealed = revealSlot !== null
-  const chosenOriginal = revealed ? displayToOriginal(item, revealSlot) : null
-  const correctDisplaySlot = originalToDisplay(item, liveQuestion.answer)
   const hasExpl =
     Array.isArray(liveQuestion.option_explanations) &&
     liveQuestion.option_explanations.length === liveQuestion.options.length
@@ -96,17 +103,17 @@ export default function Practice({ db, dispatch, config, onExit }) {
   return (
     <div className="practice">
       <div className="practice-header">
-        <button className="btn btn-ghost" onClick={onExit}>← סיום</button>
-        <span className="progress-pill">
-          {idx + 1} / {session.length}
-        </span>
+        <h2 className="practice-title">
+          שאלה {idx + 1} <span className="practice-title-total">מתוך {session.length}</span>
+        </h2>
+        <button className="btn btn-ghost btn-sm" onClick={onExit}>
+          סיום התרגול
+        </button>
       </div>
 
       <div className="card question-card">
         <div className="question-meta">
           {liveQuestion.course != null && <span className="chip">{courseLabel(liveQuestion.course)}</span>}
-          {liveQuestion.unit != null && liveQuestion.unit !== '' && <span className="chip">יחידה {liveQuestion.unit}</span>}
-          {liveQuestion.topic && <span className="chip chip-topic">{liveQuestion.topic}</span>}
           {liveQuestion.answered_at && (
             <span className={`chip ${liveQuestion.correct ? 'chip-ok' : 'chip-bad'}`}>
               {liveQuestion.correct ? 'נענתה נכון' : 'נענתה שגוי'}
@@ -120,26 +127,31 @@ export default function Practice({ db, dispatch, config, onExit }) {
           {item.order.map((originalIndex, displaySlot) => {
             const text = liveQuestion.options[originalIndex]
             const isCorrect = originalIndex === liveQuestion.answer
-            const isYourPick = displaySlot === revealSlot
+            const isYourPick = displaySlot === selectedSlot
             let cls = 'option'
-            if (revealed) {
+            if (pickedCorrect) {
+              // Solved: reveal the (chosen) correct option, dim the rest.
               if (isCorrect) cls += ' option-correct'
-              else if (isYourPick) cls += ' option-wrong'
               else cls += ' option-dim'
+            } else if (isYourPick) {
+              // Wrong pick: mark only your choice — never reveal the answer.
+              cls += ' option-wrong'
             }
             return (
               <li key={originalIndex}>
                 <button
                   className={cls}
                   onClick={() => pick(displaySlot)}
-                  disabled={revealed}
+                  disabled={pickedCorrect}
                 >
                   <span className="option-letter">{HEB_LETTERS[displaySlot] || displaySlot + 1}</span>
                   <span className="option-text">{text}</span>
-                  {revealed && isCorrect && <span className="mark">✓</span>}
-                  {revealed && isYourPick && !isCorrect && <span className="mark">✗</span>}
+                  {pickedCorrect && isCorrect && <span className="mark">✓</span>}
+                  {!pickedCorrect && isYourPick && <span className="mark">✗</span>}
                 </button>
-                {revealed && hasExpl && (
+                {/* Explanation for the currently selected option: the correct
+                    one once solved, or the wrong one you just tried. */}
+                {hasExpl && isYourPick && (
                   <p className={`opt-expl ${isCorrect ? 'opt-expl-correct' : 'opt-expl-wrong'}`}>
                     {liveQuestion.option_explanations[originalIndex]}
                   </p>
@@ -149,15 +161,15 @@ export default function Practice({ db, dispatch, config, onExit }) {
           })}
         </ul>
 
-        {revealed && !hasExpl && (
-          <p className="expl-fallback">
-            {chosenOriginal === liveQuestion.answer
-              ? 'בחרת נכון.'
-              : `התשובה הנכונה היא ${HEB_LETTERS[correctDisplaySlot]}.`}
+        {picked && !pickedCorrect && (
+          <p className="answer-note">
+            ניתן לבחור תשובה נוספת. בכל מקרה שאלה זו תישמר בסטטוס ״נענתה לא נכון״.
           </p>
         )}
 
-        {revealed && liveQuestion.explanation && (
+        {pickedCorrect && !hasExpl && <p className="expl-fallback">בחרת נכון.</p>}
+
+        {pickedCorrect && liveQuestion.explanation && (
           <div className="expl-general">
             <span className="expl-badge">הסבר כללי</span>
             <p>{liveQuestion.explanation}</p>
@@ -166,24 +178,9 @@ export default function Practice({ db, dispatch, config, onExit }) {
       </div>
 
       <div className="practice-nav">
-        <button className="btn" onClick={goPrev} disabled={idx === 0}>
-          הקודם
+        <button className="btn btn-primary" onClick={goNext} disabled={!attempted}>
+          {atEnd ? 'סיום התרגול' : 'לשאלה הבאה'}
         </button>
-        {revealed && !atEnd && (
-          <button className="btn btn-primary" onClick={goNext}>
-            הבא ←
-          </button>
-        )}
-        {revealed && atEnd && (
-          <button className="btn btn-primary" onClick={onExit}>
-            סיום התרגול
-          </button>
-        )}
-        {!revealed && (
-          <button className="btn" onClick={goNext} disabled={atEnd}>
-            דלג
-          </button>
-        )}
       </div>
     </div>
   )

@@ -129,6 +129,7 @@ function PracticeTab({ db, dispatch }) {
     topic: 'all',
     difficulty: [], // multi-select; empty = all
     state: ['unanswered', 'incorrect'], // multi-select; empty = all
+    shuffleQuestions: true, // randomize question order each session
     shuffleOptions: true,
   })
   const [session, setSession] = useState(null) // null = still on the setup screen

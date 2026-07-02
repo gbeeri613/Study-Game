@@ -171,6 +171,15 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
       <label className="checkbox-row">
         <input
           type="checkbox"
+          checked={config.shuffleQuestions}
+          onChange={(e) => setConfig({ ...config, shuffleQuestions: e.target.checked })}
+        />
+        <span>ערבב את סדר השאלות</span>
+      </label>
+
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
           checked={config.shuffleOptions}
           onChange={(e) => setConfig({ ...config, shuffleOptions: e.target.checked })}
         />
