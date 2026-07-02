@@ -119,10 +119,12 @@ export default function Practice({ db, dispatch, config, onExit }) {
         <ul className="options">
           {item.order.map((originalIndex, displaySlot) => {
             const text = liveQuestion.options[originalIndex]
+            const isCorrect = originalIndex === liveQuestion.answer
+            const isYourPick = displaySlot === revealSlot
             let cls = 'option'
             if (revealed) {
-              if (originalIndex === liveQuestion.answer) cls += ' option-correct'
-              else if (displaySlot === revealSlot) cls += ' option-wrong'
+              if (isCorrect) cls += ' option-correct'
+              else if (isYourPick) cls += ' option-wrong'
               else cls += ' option-dim'
             }
             return (
@@ -134,72 +136,42 @@ export default function Practice({ db, dispatch, config, onExit }) {
                 >
                   <span className="option-letter">{HEB_LETTERS[displaySlot] || displaySlot + 1}</span>
                   <span className="option-text">{text}</span>
-                  {revealed && originalIndex === liveQuestion.answer && <span className="mark">✓</span>}
-                  {revealed && displaySlot === revealSlot && originalIndex !== liveQuestion.answer && (
-                    <span className="mark">✗</span>
-                  )}
+                  {revealed && isCorrect && <span className="mark">✓</span>}
+                  {revealed && isYourPick && !isCorrect && <span className="mark">✗</span>}
                 </button>
+                {revealed && hasExpl && (
+                  <p className={`opt-expl ${isCorrect ? 'opt-expl-correct' : 'opt-expl-wrong'}`}>
+                    {liveQuestion.option_explanations[originalIndex]}
+                  </p>
+                )}
               </li>
             )
           })}
         </ul>
 
-        {revealed && (
-          <div className={`reveal ${chosenOriginal === liveQuestion.answer ? 'reveal-ok' : 'reveal-bad'}`}>
-            <div className="reveal-headline">
-              {chosenOriginal === liveQuestion.answer ? 'תשובה נכונה! 🎉' : 'תשובה שגויה'}
-            </div>
+        {revealed && !hasExpl && (
+          <p className="expl-fallback">
+            {chosenOriginal === liveQuestion.answer
+              ? 'בחרת נכון.'
+              : `התשובה הנכונה היא ${HEB_LETTERS[correctDisplaySlot]}.`}
+          </p>
+        )}
 
-            {hasExpl ? (
-              <div className="expl-list">
-                {/* Correct option explanation first, emphasized */}
-                <div className="expl expl-correct">
-                  <span className="expl-badge">התשובה הנכונה — {HEB_LETTERS[correctDisplaySlot]}</span>
-                  <p>{liveQuestion.option_explanations[liveQuestion.answer]}</p>
-                </div>
-
-                {/* Why the wrong options are wrong — the pedagogical core */}
-                <div className="expl-wrongs">
-                  <div className="expl-wrongs-title">למה האפשרויות האחרות שגויות</div>
-                  {item.order.map((originalIndex, displaySlot) => {
-                    if (originalIndex === liveQuestion.answer) return null
-                    const isYourPick = displaySlot === revealSlot
-                    return (
-                      <div key={originalIndex} className={`expl ${isYourPick ? 'expl-yourpick' : ''}`}>
-                        <span className="expl-badge">
-                          {HEB_LETTERS[displaySlot]}{isYourPick ? ' — הבחירה שלך' : ''}
-                        </span>
-                        <p>{liveQuestion.option_explanations[originalIndex]}</p>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : (
-              <p className="expl-fallback">
-                {chosenOriginal === liveQuestion.answer
-                  ? 'בחרת נכון.'
-                  : `התשובה הנכונה היא ${HEB_LETTERS[correctDisplaySlot]}.`}
-              </p>
-            )}
-
-            {liveQuestion.explanation && (
-              <div className="expl expl-general">
-                <span className="expl-badge">הסבר כללי</span>
-                <p>{liveQuestion.explanation}</p>
-              </div>
-            )}
+        {revealed && liveQuestion.explanation && (
+          <div className="expl-general">
+            <span className="expl-badge">הסבר כללי</span>
+            <p>{liveQuestion.explanation}</p>
           </div>
         )}
       </div>
 
       <div className="practice-nav">
         <button className="btn" onClick={goPrev} disabled={idx === 0}>
-          הקודמת
+          הקודם
         </button>
         {revealed && !atEnd && (
           <button className="btn btn-primary" onClick={goNext}>
-            הבאה →
+            הבא ←
           </button>
         )}
         {revealed && atEnd && (

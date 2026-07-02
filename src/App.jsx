@@ -124,12 +124,12 @@ function EmptyState({ onLoadSeed, onGoManage }) {
 function PracticeTab({ db, dispatch }) {
   const [config, setConfig] = useState({
     course: 'all',
+    filterBy: 'all', // 'all' | 'unit' | 'topic' — mutually exclusive sub-filter
     unit: 'all',
     topic: 'all',
-    difficulty: 'all',
-    state: 'all',
-    order: 'sequential',
-    shuffleOptions: false,
+    difficulty: [], // multi-select; empty = all
+    state: ['unanswered', 'incorrect'], // multi-select; empty = all
+    shuffleOptions: true,
   })
   const [session, setSession] = useState(null) // null = still on the setup screen
 
