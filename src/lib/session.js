@@ -12,23 +12,35 @@ function axisValue(q, axis) {
 }
 
 // filters: {
-//   course, unit, topic, difficulty  -> value | 'all'   (unit compared as string)
-//   state -> 'all' | 'unanswered' | 'answered' | 'incorrect' | 'correct'
+//   course, unit, topic  -> value | 'all'   (unit compared as string)
+//   difficulty -> string[]   (multi-select; empty = all)
+//   state      -> string[]   (multi-select of buckets: 'unanswered' |
+//                             'correct' | 'incorrect'; empty = all)
 // }
 export function applyFilters(questions, filters = {}) {
   return questions.filter((q) => {
-    for (const axis of ['course', 'unit', 'topic', 'difficulty']) {
+    // Single-value axes.
+    for (const axis of ['course', 'unit', 'topic']) {
       const want = filters[axis]
       if (want && want !== 'all') {
         // compare as strings so numeric `unit` and dropdown values line up
         if (String(axisValue(q, axis)) !== String(want)) return false
       }
     }
-    const state = filters.state || 'all'
-    if (state === 'unanswered' && q.answered_at != null) return false
-    if (state === 'answered' && q.answered_at == null) return false
-    if (state === 'incorrect' && !(q.answered_at != null && q.correct === false)) return false
-    if (state === 'correct' && !(q.answered_at != null && q.correct === true)) return false
+
+    // Difficulty: multi-select. Empty (or missing) means no filter.
+    const diffs = filters.difficulty
+    if (Array.isArray(diffs) && diffs.length > 0) {
+      if (!diffs.map(String).includes(String(axisValue(q, 'difficulty')))) return false
+    }
+
+    // State: multi-select over answer buckets. Empty means no filter.
+    const states = filters.state
+    if (Array.isArray(states) && states.length > 0) {
+      const bucket = q.answered_at == null ? 'unanswered' : q.correct ? 'correct' : 'incorrect'
+      if (!states.includes(bucket)) return false
+    }
+
     return true
   })
 }

@@ -11,31 +11,44 @@ function optionLabel(axis, value) {
 }
 
 const STATE_OPTIONS = [
-  { value: 'all', label: 'הכל' },
   { value: 'unanswered', label: 'לא נענו' },
-  { value: 'answered', label: 'נענו' },
-  { value: 'incorrect', label: 'שגויות' },
-  { value: 'correct', label: 'נכונות' },
+  { value: 'incorrect', label: 'נענו שגוי' },
+  { value: 'correct', label: 'נענו נכון' },
 ]
 
-function AxisSelect({ axis, label, db, config, setConfig }) {
-  const values = distinctValues(db.questions, axis)
+const SUBFILTER_MODES = [
+  { value: 'all', label: 'הכל' },
+  { value: 'unit', label: 'לפי יחידה' },
+  { value: 'topic', label: 'לפי נושא' },
+]
+
+// Multi-select rendered as toggle pills. An empty selection means "all", shown
+// by highlighting the leading "הכל" pill.
+function PillMultiSelect({ options, selected, onChange, allLabel = 'הכל' }) {
+  function toggle(value) {
+    if (selected.includes(value)) onChange(selected.filter((v) => v !== value))
+    else onChange([...selected, value])
+  }
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <select
-        className="select"
-        value={config[axis]}
-        onChange={(e) => setConfig({ ...config, [axis]: e.target.value })}
+    <div className="chip-group">
+      <button
+        type="button"
+        className={`chip-toggle ${selected.length === 0 ? 'chip-toggle-active' : ''}`}
+        onClick={() => onChange([])}
       >
-        <option value="all">הכל</option>
-        {values.map((v) => (
-          <option key={v} value={v}>
-            {optionLabel(axis, v)}
-          </option>
-        ))}
-      </select>
-    </label>
+        {allLabel}
+      </button>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          className={`chip-toggle ${selected.includes(o.value) ? 'chip-toggle-active' : ''}`}
+          onClick={() => toggle(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -43,42 +56,116 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
   const matching = applyFilters(db.questions, config)
   const count = matching.length
 
+  // Unit / topic / difficulty choices are scoped to the selected course.
+  const scoped =
+    config.course === 'all'
+      ? db.questions
+      : db.questions.filter((q) => String(q.course) === String(config.course))
+
+  const courseValues = distinctValues(db.questions, 'course')
+  const subValues = distinctValues(scoped, config.filterBy === 'topic' ? 'topic' : 'unit')
+  const difficultyValues = distinctValues(scoped, 'difficulty')
+
+  // Switching the sub-filter mode clears whichever axis is no longer active.
+  function setMode(mode) {
+    setConfig({ ...config, filterBy: mode, unit: 'all', topic: 'all' })
+  }
+
   return (
     <div className="filter-bar card">
       <h2>בחר תרגול</h2>
 
-      <div className="fields-grid">
-        <AxisSelect axis="course" label="קורס" db={db} config={config} setConfig={setConfig} />
-        <AxisSelect axis="unit" label="יחידה" db={db} config={config} setConfig={setConfig} />
-        <AxisSelect axis="topic" label="נושא" db={db} config={config} setConfig={setConfig} />
-        <AxisSelect axis="difficulty" label="רמת קושי" db={db} config={config} setConfig={setConfig} />
-
+      <div className="filter-fields">
+        {/* Course */}
         <label className="field">
-          <span className="field-label">מצב</span>
+          <span className="field-label">קורס</span>
           <select
             className="select"
-            value={config.state}
-            onChange={(e) => setConfig({ ...config, state: e.target.value })}
+            value={config.course}
+            onChange={(e) =>
+              // reset sub-filter values so stale unit/topic don't apply to a new course
+              setConfig({ ...config, course: e.target.value, unit: 'all', topic: 'all' })
+            }
           >
-            {STATE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
+            <option value="all">הכל</option>
+            {courseValues.map((v) => (
+              <option key={v} value={v}>
+                {optionLabel('course', v)}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="field">
-          <span className="field-label">סדר</span>
-          <select
-            className="select"
-            value={config.order}
-            onChange={(e) => setConfig({ ...config, order: e.target.value })}
-          >
-            <option value="sequential">רציף</option>
-            <option value="shuffle">מעורבב</option>
-          </select>
-        </label>
+        {/* Sub-filter: by unit OR by topic (mutually exclusive) */}
+        <div className="field">
+          <span className="field-label">סינון לפי</span>
+          <div className="segmented" role="tablist">
+            {SUBFILTER_MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                role="tab"
+                aria-selected={config.filterBy === m.value}
+                className={`seg ${config.filterBy === m.value ? 'seg-active' : ''}`}
+                onClick={() => setMode(m.value)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {config.filterBy === 'unit' && (
+            <select
+              key="unit-select"
+              className="select subfilter-select"
+              value={config.unit}
+              onChange={(e) => setConfig({ ...config, unit: e.target.value })}
+            >
+              <option value="all">כל היחידות</option>
+              {subValues.map((v) => (
+                <option key={v} value={v}>
+                  {optionLabel('unit', v)}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {config.filterBy === 'topic' && (
+            <select
+              key="topic-select"
+              className="select subfilter-select"
+              value={config.topic}
+              onChange={(e) => setConfig({ ...config, topic: e.target.value })}
+            >
+              <option value="all">כל הנושאים</option>
+              {subValues.map((v) => (
+                <option key={v} value={v}>
+                  {optionLabel('topic', v)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* State — multi-select */}
+        <div className="field">
+          <span className="field-label">מצב</span>
+          <PillMultiSelect
+            options={STATE_OPTIONS}
+            selected={config.state}
+            onChange={(state) => setConfig({ ...config, state })}
+          />
+        </div>
+
+        {/* Difficulty — multi-select */}
+        <div className="field">
+          <span className="field-label">רמת קושי</span>
+          <PillMultiSelect
+            options={difficultyValues.map((v) => ({ value: v, label: optionLabel('difficulty', v) }))}
+            selected={config.difficulty}
+            onChange={(difficulty) => setConfig({ ...config, difficulty })}
+          />
+        </div>
       </div>
 
       <label className="checkbox-row">
