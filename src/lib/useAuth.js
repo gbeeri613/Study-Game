@@ -15,6 +15,22 @@ export function isAdmin(user) {
   return !!user && user.email === ADMIN_EMAIL
 }
 
+// Dev-only escape hatch: opening the app with `?preview` skips the Google
+// round-trip and signs in a fake admin user, so the UI can be inspected
+// locally (design work, screenshots). Vite replaces `import.meta.env.DEV`
+// statically, so this whole branch is dead code in production builds.
+export const PREVIEW_USER_ID = 'preview-user'
+const PREVIEW_USER =
+  import.meta.env.DEV &&
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).has('preview')
+    ? {
+        id: PREVIEW_USER_ID,
+        email: ADMIN_EMAIL,
+        user_metadata: { full_name: 'משתמש תצוגה' },
+      }
+    : null
+
 export function useAuth() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -37,6 +53,8 @@ export function useAuth() {
       sub.subscription.unsubscribe()
     }
   }, [])
+
+  if (PREVIEW_USER) return { session: null, user: PREVIEW_USER, loading: false }
 
   return { session, user: session?.user ?? null, loading }
 }

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { exportDb } from '../lib/storage.js'
 import { validateImport } from '../lib/validate.js'
 import { upsertQuestions } from '../lib/api.js'
+import { IconUpload, IconDownload, IconReset, IconCheck } from './Icons.jsx'
 
 // Admin-only data management. This tab is only rendered for the admin; the
 // database's RLS is the real guard, so a non-admin who forced their way here
@@ -90,13 +91,17 @@ export default function ImportExport({ db, dispatch, onImported }) {
           תקינות, השאלות ייכתבו ל<strong>מאגר המשותף</strong>: שאלות חדשות יתווספו,
           וקיימות (לפי <code>id</code>) יעודכנו. מצב המענה של המשתמשים לעולם אינו נמחק.
         </p>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/json,.json"
-          onChange={handleFile}
-          className="file-input"
-        />
+        <label className="upload-zone">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleFile}
+          />
+          <IconUpload size={26} />
+          <span className="upload-title">בחר קובץ JSON</span>
+          <span className="upload-sub">שאלות חדשות יתווספו, קיימות יעודכנו</span>
+        </label>
 
         {report && (
           <div className="import-report">
@@ -144,6 +149,7 @@ export default function ImportExport({ db, dispatch, onImported }) {
         </p>
         <p className="muted">כרגע במאגר: <strong>{db.questions.length}</strong> שאלות.</p>
         <button className="btn" onClick={doExport} disabled={db.questions.length === 0}>
+          <IconDownload size={17} />
           ייצא JSON
         </button>
       </div>
@@ -151,13 +157,19 @@ export default function ImportExport({ db, dispatch, onImported }) {
       <div className="card">
         <h2>כלים</h2>
         <div className="tool-buttons">
-          <button className="btn btn-ghost" onClick={resetState} disabled={db.questions.length === 0}>
+          <button className="btn btn-danger" onClick={resetState} disabled={db.questions.length === 0}>
+            <IconReset size={17} />
             אפס את מצב המענה שלי
           </button>
         </div>
       </div>
 
-      {notice && <div className="notice">{notice}</div>}
+      {notice && (
+        <div className="toast">
+          <IconCheck size={18} />
+          {notice}
+        </div>
+      )}
     </div>
   )
 }

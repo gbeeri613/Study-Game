@@ -7,7 +7,9 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Fail loudly in dev if the env is missing — the app is useless without it.
+// Fail loudly if the env is missing — the app is useless without it — but
+// still construct a client with placeholders so the UI renders instead of
+// white-screening (sign-in and data calls will fail with clear errors).
 if (!url || !key) {
   console.error(
     'Missing Supabase env vars. Set VITE_SUPABASE_URL and ' +
@@ -15,12 +17,16 @@ if (!url || !key) {
   )
 }
 
-export const supabase = createClient(url, key, {
-  auth: {
-    // Persist the session in localStorage and refresh it automatically so a
-    // signed-in user stays signed in across reloads and devices.
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+export const supabase = createClient(
+  url || 'https://placeholder.supabase.co',
+  key || 'placeholder-anon-key',
+  {
+    auth: {
+      // Persist the session in localStorage and refresh it automatically so a
+      // signed-in user stays signed in across reloads and devices.
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
   },
-})
+)
