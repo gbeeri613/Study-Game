@@ -3,7 +3,8 @@
 // the same in-memory db shape the rest of the app already understands.
 
 import { supabase } from './supabase.js'
-import { SCHEMA_VERSION } from './storage.js'
+import { SCHEMA_VERSION, loadDb } from './storage.js'
+import { PREVIEW_USER_ID } from './useAuth.js'
 
 // Content columns pulled from the questions table, in schema order.
 const QUESTION_COLUMNS =
@@ -12,6 +13,14 @@ const QUESTION_COLUMNS =
 // Fetch the whole db for a user: all shared questions, with this user's answer
 // state merged onto each. Returns the standard { schema_version, questions } db.
 export async function fetchRemoteDb(userId) {
+  // Dev-only (`?preview` fake user): serve the locally cached db instead of
+  // hitting Supabase. Stripped from production builds.
+  if (import.meta.env.DEV && userId === PREVIEW_USER_ID) {
+    const cached = loadDb()
+    if (cached) return cached
+    throw new Error('preview mode: no cached db in localStorage')
+  }
+
   const [qRes, aRes] = await Promise.all([
     supabase.from('questions').select(QUESTION_COLUMNS),
     supabase

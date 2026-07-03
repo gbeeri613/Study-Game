@@ -1,5 +1,6 @@
 import { applyFilters, distinctValues, NONE_VALUE } from '../lib/session.js'
 import { courseLabel, difficultyLabel } from '../data/labels.js'
+import { IconChevronDown, IconPlay } from './Icons.jsx'
 
 // Display label for a dropdown value on a given axis.
 function optionLabel(axis, value) {
@@ -21,6 +22,47 @@ const SUBFILTER_MODES = [
   { value: 'unit', label: 'לפי יחידה' },
   { value: 'topic', label: 'לפי נושא' },
 ]
+
+// Native select styled with a custom chevron.
+function Select({ value, onChange, children }) {
+  return (
+    <div className="select-wrap">
+      <select className="select" value={value} onChange={onChange}>
+        {children}
+      </select>
+      <IconChevronDown size={17} />
+    </div>
+  )
+}
+
+// Segmented control with a sliding active-pill indicator.
+function Segmented({ options, value, onChange }) {
+  const idx = Math.max(0, options.findIndex((o) => o.value === value))
+  const n = options.length
+  return (
+    <div className="segmented" role="tablist">
+      <span
+        className="seg-indicator"
+        style={{
+          width: `calc((100% - 6px) / ${n})`,
+          insetInlineStart: `calc(3px + ${idx} * (100% - 6px) / ${n})`,
+        }}
+      />
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={value === o.value}
+          className={`seg ${value === o.value ? 'seg-active' : ''}`}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 // Multi-select rendered as toggle pills. An empty selection means "all", shown
 // by highlighting the leading "הכל" pill.
@@ -52,6 +94,20 @@ function PillMultiSelect({ options, selected, onChange, allLabel = 'הכל' }) {
   )
 }
 
+// iOS-style switch bound to a boolean.
+function SwitchRow({ checked, onChange, children }) {
+  return (
+    <label className="switch-row">
+      <span>{children}</span>
+      <span className="switch">
+        <input type="checkbox" checked={checked} onChange={onChange} />
+        <span className="switch-track" />
+        <span className="switch-thumb" />
+      </span>
+    </label>
+  )
+}
+
 export default function FilterBar({ db, config, setConfig, onStart }) {
   const matching = applyFilters(db.questions, config)
   const count = matching.length
@@ -73,14 +129,13 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
 
   return (
     <div className="filter-bar card">
-      <h2>בחר תרגול</h2>
+      <h2>תרגול חדש</h2>
 
       <div className="filter-fields">
         {/* Course */}
-        <label className="field">
+        <div className="field">
           <span className="field-label">קורס</span>
-          <select
-            className="select"
+          <Select
             value={config.course}
             onChange={(e) =>
               // reset sub-filter values so stale unit/topic don't apply to a new course
@@ -93,57 +148,46 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
                 {optionLabel('course', v)}
               </option>
             ))}
-          </select>
-        </label>
+          </Select>
+        </div>
 
         {/* Sub-filter: by unit OR by topic (mutually exclusive) */}
         <div className="field">
           <span className="field-label">סינון לפי</span>
-          <div className="segmented" role="tablist">
-            {SUBFILTER_MODES.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                role="tab"
-                aria-selected={config.filterBy === m.value}
-                className={`seg ${config.filterBy === m.value ? 'seg-active' : ''}`}
-                onClick={() => setMode(m.value)}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <Segmented options={SUBFILTER_MODES} value={config.filterBy} onChange={setMode} />
 
           {config.filterBy === 'unit' && (
-            <select
-              key="unit-select"
-              className="select subfilter-select"
-              value={config.unit}
-              onChange={(e) => setConfig({ ...config, unit: e.target.value })}
-            >
-              <option value="all">כל היחידות</option>
-              {subValues.map((v) => (
-                <option key={v} value={v}>
-                  {optionLabel('unit', v)}
-                </option>
-              ))}
-            </select>
+            <div className="subfilter-select">
+              <Select
+                key="unit-select"
+                value={config.unit}
+                onChange={(e) => setConfig({ ...config, unit: e.target.value })}
+              >
+                <option value="all">כל היחידות</option>
+                {subValues.map((v) => (
+                  <option key={v} value={v}>
+                    {optionLabel('unit', v)}
+                  </option>
+                ))}
+              </Select>
+            </div>
           )}
 
           {config.filterBy === 'topic' && (
-            <select
-              key="topic-select"
-              className="select subfilter-select"
-              value={config.topic}
-              onChange={(e) => setConfig({ ...config, topic: e.target.value })}
-            >
-              <option value="all">כל הנושאים</option>
-              {subValues.map((v) => (
-                <option key={v} value={v}>
-                  {optionLabel('topic', v)}
-                </option>
-              ))}
-            </select>
+            <div className="subfilter-select">
+              <Select
+                key="topic-select"
+                value={config.topic}
+                onChange={(e) => setConfig({ ...config, topic: e.target.value })}
+              >
+                <option value="all">כל הנושאים</option>
+                {subValues.map((v) => (
+                  <option key={v} value={v}>
+                    {optionLabel('topic', v)}
+                  </option>
+                ))}
+              </Select>
+            </div>
           )}
         </div>
 
@@ -161,34 +205,41 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
         <div className="field">
           <span className="field-label">רמת קושי</span>
           <PillMultiSelect
-            options={difficultyValues.map((v) => ({ value: v, label: optionLabel('difficulty', v) }))}
+            options={difficultyValues.map((v) => ({
+              value: v,
+              label: optionLabel('difficulty', v),
+            }))}
             selected={config.difficulty}
             onChange={(difficulty) => setConfig({ ...config, difficulty })}
           />
         </div>
       </div>
 
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
+      <div className="switch-group">
+        <SwitchRow
           checked={config.shuffleQuestions}
           onChange={(e) => setConfig({ ...config, shuffleQuestions: e.target.checked })}
-        />
-        <span>ערבב את סדר השאלות</span>
-      </label>
-
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
+        >
+          ערבב את סדר השאלות
+        </SwitchRow>
+        <SwitchRow
           checked={config.shuffleOptions}
           onChange={(e) => setConfig({ ...config, shuffleOptions: e.target.checked })}
-        />
-        <span>ערבב את סדר התשובות בכל שאלה</span>
-      </label>
+        >
+          ערבב את סדר התשובות בכל שאלה
+        </SwitchRow>
+      </div>
 
       <div className="filter-footer">
-        <span className="count-pill">{count} שאלות תואמות</span>
-        <button className="btn btn-primary" disabled={count === 0} onClick={onStart}>
+        <span className="count-pill">
+          <strong>{count}</strong> שאלות תואמות
+        </span>
+        <button
+          className="btn btn-primary btn-start"
+          disabled={count === 0}
+          onClick={onStart}
+        >
+          <IconPlay size={17} />
           התחל תרגול
         </button>
       </div>
