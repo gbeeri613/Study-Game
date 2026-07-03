@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { applyFilters, distinctValues, NONE_VALUE } from '../lib/session.js'
 import { courseLabel, difficultyLabel } from '../data/labels.js'
 import { IconChevronDown, IconPlay } from './Icons.jsx'
@@ -109,14 +110,20 @@ function SwitchRow({ checked, onChange, children }) {
 }
 
 export default function FilterBar({ db, config, setConfig, onStart }) {
+  // Advanced filters are tucked away; the default form is just course + state.
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
   const matching = applyFilters(db.questions, config)
   const count = matching.length
 
-  // Unit / topic / difficulty choices are scoped to the selected course.
+  // Unit / topic / difficulty choices are scoped to the selected courses.
   const scoped =
-    config.course === 'all'
+    config.course.length === 0
       ? db.questions
-      : db.questions.filter((q) => String(q.course) === String(config.course))
+      : db.questions.filter((q) => {
+          const v = q.course === undefined || q.course === null || q.course === '' ? NONE_VALUE : q.course
+          return config.course.map(String).includes(String(v))
+        })
 
   const courseValues = distinctValues(db.questions, 'course')
   const subValues = distinctValues(scoped, config.filterBy === 'topic' ? 'topic' : 'unit')
@@ -127,68 +134,30 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
     setConfig({ ...config, filterBy: mode, unit: 'all', topic: 'all' })
   }
 
+  // Dot on the collapsed toggle when an advanced setting deviates from the
+  // defaults (so hidden-but-active filters are never invisible).
+  const advancedActive =
+    config.filterBy !== 'all' ||
+    config.difficulty.length > 0 ||
+    !config.shuffleQuestions ||
+    !config.shuffleOptions
+
   return (
     <div className="filter-bar card">
       <h2>תרגול חדש</h2>
 
       <div className="filter-fields">
-        {/* Course */}
+        {/* Course — multi-select */}
         <div className="field">
           <span className="field-label">קורס</span>
-          <Select
-            value={config.course}
-            onChange={(e) =>
-              // reset sub-filter values so stale unit/topic don't apply to a new course
-              setConfig({ ...config, course: e.target.value, unit: 'all', topic: 'all' })
+          <PillMultiSelect
+            options={courseValues.map((v) => ({ value: v, label: optionLabel('course', v) }))}
+            selected={config.course}
+            onChange={(course) =>
+              // reset sub-filter values so stale unit/topic don't apply to a new course mix
+              setConfig({ ...config, course, unit: 'all', topic: 'all' })
             }
-          >
-            <option value="all">הכל</option>
-            {courseValues.map((v) => (
-              <option key={v} value={v}>
-                {optionLabel('course', v)}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        {/* Sub-filter: by unit OR by topic (mutually exclusive) */}
-        <div className="field">
-          <span className="field-label">סינון לפי</span>
-          <Segmented options={SUBFILTER_MODES} value={config.filterBy} onChange={setMode} />
-
-          {config.filterBy === 'unit' && (
-            <div className="subfilter-select">
-              <Select
-                key="unit-select"
-                value={config.unit}
-                onChange={(e) => setConfig({ ...config, unit: e.target.value })}
-              >
-                <option value="all">כל היחידות</option>
-                {subValues.map((v) => (
-                  <option key={v} value={v}>
-                    {optionLabel('unit', v)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
-
-          {config.filterBy === 'topic' && (
-            <div className="subfilter-select">
-              <Select
-                key="topic-select"
-                value={config.topic}
-                onChange={(e) => setConfig({ ...config, topic: e.target.value })}
-              >
-                <option value="all">כל הנושאים</option>
-                {subValues.map((v) => (
-                  <option key={v} value={v}>
-                    {optionLabel('topic', v)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
+          />
         </div>
 
         {/* State — multi-select */}
@@ -200,35 +169,90 @@ export default function FilterBar({ db, config, setConfig, onStart }) {
             onChange={(state) => setConfig({ ...config, state })}
           />
         </div>
+      </div>
 
-        {/* Difficulty — multi-select */}
-        <div className="field">
-          <span className="field-label">רמת קושי</span>
-          <PillMultiSelect
-            options={difficultyValues.map((v) => ({
-              value: v,
-              label: optionLabel('difficulty', v),
-            }))}
-            selected={config.difficulty}
-            onChange={(difficulty) => setConfig({ ...config, difficulty })}
-          />
+      <button
+        type="button"
+        className={`advanced-toggle ${showAdvanced ? 'advanced-toggle-open' : ''}`}
+        aria-expanded={showAdvanced}
+        onClick={() => setShowAdvanced((s) => !s)}
+      >
+        אפשרויות מתקדמות
+        {advancedActive && !showAdvanced && <span className="advanced-dot" />}
+        <IconChevronDown size={16} />
+      </button>
+
+      {showAdvanced && (
+        <div className="advanced-panel">
+          {/* Sub-filter: by unit OR by topic (mutually exclusive) */}
+          <div className="field">
+            <span className="field-label">סינון לפי</span>
+            <Segmented options={SUBFILTER_MODES} value={config.filterBy} onChange={setMode} />
+
+            {config.filterBy === 'unit' && (
+              <div className="subfilter-select">
+                <Select
+                  key="unit-select"
+                  value={config.unit}
+                  onChange={(e) => setConfig({ ...config, unit: e.target.value })}
+                >
+                  <option value="all">כל היחידות</option>
+                  {subValues.map((v) => (
+                    <option key={v} value={v}>
+                      {optionLabel('unit', v)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {config.filterBy === 'topic' && (
+              <div className="subfilter-select">
+                <Select
+                  key="topic-select"
+                  value={config.topic}
+                  onChange={(e) => setConfig({ ...config, topic: e.target.value })}
+                >
+                  <option value="all">כל הנושאים</option>
+                  {subValues.map((v) => (
+                    <option key={v} value={v}>
+                      {optionLabel('topic', v)}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
+
+          {/* Difficulty — multi-select */}
+          <div className="field">
+            <span className="field-label">רמת קושי</span>
+            <PillMultiSelect
+              options={difficultyValues.map((v) => ({
+                value: v,
+                label: optionLabel('difficulty', v),
+              }))}
+              selected={config.difficulty}
+              onChange={(difficulty) => setConfig({ ...config, difficulty })}
+            />
+          </div>
+
+          <div className="switch-group">
+            <SwitchRow
+              checked={config.shuffleQuestions}
+              onChange={(e) => setConfig({ ...config, shuffleQuestions: e.target.checked })}
+            >
+              ערבב את סדר השאלות
+            </SwitchRow>
+            <SwitchRow
+              checked={config.shuffleOptions}
+              onChange={(e) => setConfig({ ...config, shuffleOptions: e.target.checked })}
+            >
+              ערבב את סדר התשובות בכל שאלה
+            </SwitchRow>
+          </div>
         </div>
-      </div>
-
-      <div className="switch-group">
-        <SwitchRow
-          checked={config.shuffleQuestions}
-          onChange={(e) => setConfig({ ...config, shuffleQuestions: e.target.checked })}
-        >
-          ערבב את סדר השאלות
-        </SwitchRow>
-        <SwitchRow
-          checked={config.shuffleOptions}
-          onChange={(e) => setConfig({ ...config, shuffleOptions: e.target.checked })}
-        >
-          ערבב את סדר התשובות בכל שאלה
-        </SwitchRow>
-      </div>
+      )}
 
       <div className="filter-footer">
         <span className="count-pill">

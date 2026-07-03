@@ -12,7 +12,8 @@ function axisValue(q, axis) {
 }
 
 // filters: {
-//   course, unit, topic  -> value | 'all'   (unit compared as string)
+//   unit, topic -> value | 'all'   (unit compared as string)
+//   course     -> string[]   (multi-select; empty = all)
 //   difficulty -> string[]   (multi-select; empty = all)
 //   state      -> string[]   (multi-select of buckets: 'unanswered' |
 //                             'correct' | 'incorrect'; empty = all)
@@ -20,12 +21,18 @@ function axisValue(q, axis) {
 export function applyFilters(questions, filters = {}) {
   return questions.filter((q) => {
     // Single-value axes.
-    for (const axis of ['course', 'unit', 'topic']) {
+    for (const axis of ['unit', 'topic']) {
       const want = filters[axis]
       if (want && want !== 'all') {
         // compare as strings so numeric `unit` and dropdown values line up
         if (String(axisValue(q, axis)) !== String(want)) return false
       }
+    }
+
+    // Course: multi-select. Empty (or missing) means no filter.
+    const courses = filters.course
+    if (Array.isArray(courses) && courses.length > 0) {
+      if (!courses.map(String).includes(String(axisValue(q, 'course')))) return false
     }
 
     // Difficulty: multi-select. Empty (or missing) means no filter.

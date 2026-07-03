@@ -93,7 +93,7 @@ function StudyApp({ user }) {
 
   // Practice filter/session config lives here so it survives tab switches.
   const [config, setConfig] = useState({
-    course: 'all',
+    course: [], // multi-select; empty = all
     filterBy: 'all', // 'all' | 'unit' | 'topic' — mutually exclusive sub-filter
     unit: 'all',
     topic: 'all',
