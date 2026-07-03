@@ -68,3 +68,45 @@ export async function resetAnswers(userId, ids) {
   const { error } = await query
   if (error) throw error
 }
+
+// ---- Admin: write the shared question store -------------------------------
+// Only content columns are written; per-user state never touches this table.
+// RLS lets only the admin succeed here — a non-admin call fails at the DB.
+
+const WRITABLE_COLUMNS = [
+  'id',
+  'course',
+  'unit',
+  'topic',
+  'difficulty',
+  'question',
+  'options',
+  'answer',
+  'option_explanations',
+  'explanation',
+]
+
+// Insert-or-update questions by id. Adds new questions and overwrites changed
+// ones; never deletes, so existing answers are never disturbed. Chunked to keep
+// each request well within payload limits. Returns the number written.
+export async function upsertQuestions(questions) {
+  const rows = questions.map((q) => {
+    const row = { updated_at: new Date().toISOString() }
+    for (const k of WRITABLE_COLUMNS) {
+      if (q[k] !== undefined) row[k] = q[k]
+    }
+    return row
+  })
+
+  const CHUNK = 200
+  let written = 0
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK)
+    const { error } = await supabase
+      .from('questions')
+      .upsert(slice, { onConflict: 'id' })
+    if (error) throw error
+    written += slice.length
+  }
+  return written
+}

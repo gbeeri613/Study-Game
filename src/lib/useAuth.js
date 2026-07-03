@@ -5,6 +5,16 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './supabase.js'
 
+// The question-store admin. MUST match the email in the is_admin() SQL function
+// (supabase/migrations/0001_init.sql) — that DB-side check is the real security
+// boundary; this is only for showing/hiding admin UI.
+export const ADMIN_EMAIL =
+  import.meta.env.VITE_ADMIN_EMAIL || 'gbeeri613@gmail.com'
+
+export function isAdmin(user) {
+  return !!user && user.email === ADMIN_EMAIL
+}
+
 export function useAuth() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
 import { fetchRemoteDb, recordAnswer, resetAnswers } from './lib/api.js'
-import { useAuth, signOut } from './lib/useAuth.js'
+import { useAuth, isAdmin, signOut } from './lib/useAuth.js'
 import FilterBar from './components/FilterBar.jsx'
 import Practice from './components/Practice.jsx'
 import Stats from './components/Stats.jsx'
@@ -51,8 +51,9 @@ function dbReducer(db, action) {
 const TABS = [
   { key: 'practice', label: 'תרגול' },
   { key: 'stats', label: 'סטטיסטיקה' },
-  { key: 'manage', label: 'ניהול' },
+  // 'manage' is admin-only and appended at render time.
 ]
+const ADMIN_TAB = { key: 'manage', label: 'ניהול' }
 
 export default function App() {
   const { user, loading } = useAuth()
@@ -129,6 +130,16 @@ function StudyApp({ user }) {
     [user.id],
   )
 
+  // Re-pull the whole db from Supabase (used after an admin import adds/updates
+  // questions in the shared store).
+  const refresh = useCallback(async () => {
+    const remote = await fetchRemoteDb(user.id)
+    dispatch({ type: 'SET_DB', db: remote })
+    saveDb(remote)
+  }, [user.id])
+
+  const admin = isAdmin(user)
+  const tabs = admin ? [...TABS, ADMIN_TAB] : TABS
   const hasQuestions = db.questions.length > 0
 
   return (
@@ -139,7 +150,7 @@ function StudyApp({ user }) {
           <AccountMenu user={user} />
         </div>
         <nav className="tabs" role="tablist">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               role="tab"
@@ -162,13 +173,13 @@ function StudyApp({ user }) {
             <p className="muted">{loadError}</p>
           </div>
         ) : !hasQuestions && tab !== 'manage' ? (
-          <EmptyState onGoManage={() => setTab('manage')} />
-        ) : tab === 'practice' ? (
-          <PracticeTab db={db} dispatch={persistDispatch} />
+          <EmptyState admin={admin} onGoManage={() => setTab('manage')} />
+        ) : tab === 'manage' && admin ? (
+          <ImportExport db={db} dispatch={persistDispatch} onImported={refresh} />
         ) : tab === 'stats' ? (
           <Stats db={db} />
         ) : (
-          <ImportExport db={db} dispatch={persistDispatch} />
+          <PracticeTab db={db} dispatch={persistDispatch} />
         )}
       </main>
     </div>
@@ -190,16 +201,22 @@ function AccountMenu({ user }) {
   )
 }
 
-function EmptyState({ onGoManage }) {
+function EmptyState({ admin, onGoManage }) {
   return (
     <div className="empty-state card">
       <h2>אין עדיין שאלות</h2>
-      <p>מאגר השאלות ריק כרגע. שאלות מתווספות על ידי המנהל.</p>
-      <div className="empty-actions">
-        <button className="btn" onClick={onGoManage}>
-          ניהול נתונים
-        </button>
-      </div>
+      <p>
+        {admin
+          ? 'מאגר השאלות ריק. ייבא שאלות דרך לשונית הניהול.'
+          : 'מאגר השאלות ריק כרגע. שאלות מתווספות על ידי המנהל.'}
+      </p>
+      {admin && (
+        <div className="empty-actions">
+          <button className="btn" onClick={onGoManage}>
+            ניהול נתונים
+          </button>
+        </div>
+      )}
     </div>
   )
 }
