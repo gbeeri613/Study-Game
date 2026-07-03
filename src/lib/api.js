@@ -1,0 +1,70 @@
+// Remote data layer. Supabase is the source of truth; the app merges the
+// shared `questions` store with the signed-in user's `user_answers` rows into
+// the same in-memory db shape the rest of the app already understands.
+
+import { supabase } from './supabase.js'
+import { SCHEMA_VERSION } from './storage.js'
+
+// Content columns pulled from the questions table, in schema order.
+const QUESTION_COLUMNS =
+  'id, course, unit, topic, difficulty, question, options, answer, option_explanations, explanation'
+
+// Fetch the whole db for a user: all shared questions, with this user's answer
+// state merged onto each. Returns the standard { schema_version, questions } db.
+export async function fetchRemoteDb(userId) {
+  const [qRes, aRes] = await Promise.all([
+    supabase.from('questions').select(QUESTION_COLUMNS),
+    supabase
+      .from('user_answers')
+      .select('question_id, answered_at, last_choice, correct')
+      .eq('user_id', userId),
+  ])
+
+  if (qRes.error) throw qRes.error
+  if (aRes.error) throw aRes.error
+
+  const answersById = new Map(
+    (aRes.data ?? []).map((a) => [a.question_id, a]),
+  )
+
+  const questions = (qRes.data ?? []).map((q) => {
+    const a = answersById.get(q.id)
+    return {
+      ...q,
+      answered_at: a?.answered_at ?? null,
+      last_choice: a?.last_choice ?? null,
+      correct: a?.correct ?? null,
+    }
+  })
+
+  return {
+    schema_version: SCHEMA_VERSION,
+    exported_at: new Date().toISOString(),
+    questions,
+  }
+}
+
+// Persist a single answer (upsert this user's row for the question).
+export async function recordAnswer(userId, questionId, choice, correct) {
+  const { error } = await supabase.from('user_answers').upsert(
+    {
+      user_id: userId,
+      question_id: questionId,
+      answered_at: new Date().toISOString(),
+      last_choice: choice,
+      correct,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,question_id' },
+  )
+  if (error) throw error
+}
+
+// Clear answer state. With ids: only those questions; without: all of the
+// user's answers. Deleting the row is how a question becomes "unanswered".
+export async function resetAnswers(userId, ids) {
+  let query = supabase.from('user_answers').delete().eq('user_id', userId)
+  if (ids && ids.length) query = query.in('question_id', ids)
+  const { error } = await query
+  if (error) throw error
+}
