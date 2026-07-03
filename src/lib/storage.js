@@ -65,10 +65,3 @@ export function exportDb(db) {
   triggerDownload(out, `mc-bank_${timestampStamp()}.json`)
   return out
 }
-
-// Safety-net backup taken automatically before a destructive Replace import.
-export function downloadBackup(db) {
-  const out = { ...db, exported_at: new Date().toISOString() }
-  triggerDownload(out, `mc-bank_backup_${timestampStamp()}.json`)
-  return out
-}

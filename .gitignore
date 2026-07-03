@@ -11,3 +11,6 @@ npm-debug.log*
 .env
 .env.*
 .vercel
+
+# Generated one-time seed data dumps (source of truth is the DB)
+supabase/migrations/0002_seed_*.sql

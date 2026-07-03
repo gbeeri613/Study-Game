@@ -36,10 +36,24 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Precache the built app so it works fully offline (all data is bundled).
+        // Precache the app shell so the app installs to the home screen and
+        // loads fast. Data is NOT bundled anymore — it lives in Supabase — so
+        // the app needs a connection to load questions (offline practice was
+        // intentionally dropped when the DB moved server-side).
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // SPA fallback so deep links / refreshes resolve while offline.
+        // SPA fallback so deep links / refreshes resolve to the app shell.
         navigateFallback: 'index.html',
+        // Replace any previously installed (offline-everything) service worker
+        // and drop its stale caches on the next visit.
+        cleanupOutdatedCaches: true,
+        // Never cache Supabase auth/data — always hit the network so questions
+        // and cross-device sync state are fresh.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.hostname.endsWith('.supabase.co'),
+            handler: 'NetworkOnly',
+          },
+        ],
       },
     }),
   ],

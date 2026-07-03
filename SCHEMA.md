@@ -1,9 +1,22 @@
 # Data Schema — the contract
 
-The entire database is **one JSON object**. It holds both the question content
-**and** your answer-state, and it is the only thing that moves between devices:
-export it on one device, import it on the other. `schema_version` is currently
-`1`.
+The app is backed by **Supabase (Postgres)**. There are two tables:
+
+- **`questions`** — the shared question store. Everyone signed in can read it;
+  only the admin can write it. This holds the question **content** only.
+- **`user_answers`** — per-user answer state, one row per (user, question).
+  Each user reads/writes only their own rows (enforced by Row Level Security).
+
+At load time the app fetches both and **merges** them into one in-memory object
+of the shape below, so the rest of the app sees the same `question` objects it
+always did (content fields + the three state fields). Answer-state now syncs
+automatically per signed-in user across devices — there is no more
+export/import-to-sync step. `schema_version` is currently `1`.
+
+The same object shape is still the **import/backup format**: an admin imports a
+JSON array of question objects (or a `{ questions: [...] }` object) to add or
+update questions in the shared store, and can export the current state as a
+JSON backup. See [Import behavior](#import-behavior) below.
 
 ```json
 {
@@ -55,27 +68,37 @@ export it on one device, import it on the other. `schema_version` is currently
 | `option_explanations` | string[] | no | Parallel to `options`; each entry explains that option — crucially **why each wrong option is wrong**. If missing or a length mismatch, the app degrades to just showing correct/incorrect. |
 | `explanation` | string | no | Optional overall note shown after the per-option reasons. |
 
-## Question — state fields (the app writes these)
+## Question — state fields (per user, from `user_answers`)
+
+These live in the `user_answers` table, keyed by `(user_id, question_id)`, and
+are merged onto each question in memory. They are **per user** — every signed-in
+user has their own independent answer state over the same shared questions.
 
 | Field | Type | Notes |
 |---|---|---|
-| `answered_at` | string (ISO) or `null` | `null` = never answered. Doubles as the answered/unanswered flag. |
-| `last_choice` | number or `null` | 0-based index you last picked (in **original** option order, even if display was shuffled). |
+| `answered_at` | string (ISO) or `null` | `null` = never answered (no row for this user/question). Doubles as the answered/unanswered flag. |
+| `last_choice` | number or `null` | 0-based index the user last picked (in **original** option order, even if display was shuffled). |
 | `correct` | boolean or `null` | Whether the last answer was correct. |
 
-Re-answering a question overwrites these three. Unknown extra fields on a
-question are **preserved** on import, not stripped.
+Answering a question upserts the user's row; resetting deletes it. Writes are
+optimistic (local state updates immediately, the DB write happens in the
+background). These fields must **not** appear in the `questions` table — they
+are stripped on import.
 
 ## Import behavior
 
-- **Replace** — the imported file becomes the entire database. This is the
-  cross-device sync path. Before replacing, the app auto-downloads a backup of
-  the current database and asks you to confirm.
-- **Merge new questions** — adds only questions whose `id` isn't already
-  present; existing questions and their state are left untouched. This is how
-  you top up the bank from a generation chat without losing progress.
+Import is **admin-only** (the Manage tab is hidden from other users, and the
+database's Row Level Security rejects writes to `questions` from anyone else).
+
+- **Import / update** — the validated questions are **upserted** into the
+  shared `questions` table by `id`: new questions are added, existing ones are
+  updated. It never deletes, so no user's answer state is ever disturbed. This
+  is how you top up or fix the bank from a generation chat.
 - The importer accepts either a full db object **or a bare JSON array of
-  question objects** (which is what the generation prompt below produces).
+  question objects** (which is what the generation prompt below produces). Only
+  content columns are written; state fields are ignored.
+- **Export** downloads the current in-memory state (questions + *your* answer
+  state) as a JSON backup — for archival, not for syncing (sync is automatic).
 - Validation reports precisely which `id` failed and why (missing `question`,
   empty `options`, `answer` out of range, duplicate `id`, …) instead of failing
   silently.
@@ -142,5 +165,6 @@ is needed — filters and stats populate from the data automatically.
 >
 > Generate <N> questions on <topic/unit>. Return only the JSON array.
 
-Import the resulting file with **Merge** to add the new questions without
-touching your existing progress.
+Import the resulting file from the admin **Manage** tab. The questions are
+upserted into the shared store by `id` — new questions are added, existing ones
+updated — and no user's answer state is touched.

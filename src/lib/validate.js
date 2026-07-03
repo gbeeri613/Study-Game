@@ -106,29 +106,3 @@ export function validateImport(json) {
     schemaWarning,
   }
 }
-
-// Replace: imported questions become the entire database.
-export function replaceDb(validQuestions) {
-  return {
-    schema_version: SCHEMA_VERSION,
-    exported_at: new Date().toISOString(),
-    questions: validQuestions,
-  }
-}
-
-// Merge: add only questions whose id isn't already present; existing questions
-// and their state are untouched. Returns { db, addedCount, skippedCount }.
-export function mergeNewOnly(db, validQuestions) {
-  const existingIds = new Set(db.questions.map((q) => q.id))
-  const toAdd = validQuestions.filter((q) => !existingIds.has(q.id))
-  const skippedCount = validQuestions.length - toAdd.length
-  return {
-    db: {
-      ...db,
-      exported_at: new Date().toISOString(),
-      questions: [...db.questions, ...toAdd],
-    },
-    addedCount: toAdd.length,
-    skippedCount,
-  }
-}

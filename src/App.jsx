@@ -1,10 +1,12 @@
-import { useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
+import { fetchRemoteDb, recordAnswer, resetAnswers } from './lib/api.js'
+import { useAuth, isAdmin, signOut } from './lib/useAuth.js'
 import FilterBar from './components/FilterBar.jsx'
 import Practice from './components/Practice.jsx'
 import Stats from './components/Stats.jsx'
 import ImportExport from './components/ImportExport.jsx'
-import { makeSeedDb } from './data/seed.js'
+import Login from './components/Login.jsx'
 
 // ---- db reducer ------------------------------------------------------------
 // Single source of truth for the whole database. Every action returns a NEW db
@@ -46,34 +48,109 @@ function dbReducer(db, action) {
   }
 }
 
-// Lazy initializer: localStorage if present, else empty (prompts import).
-function initDb() {
-  return loadDb() || emptyDb()
-}
-
 const TABS = [
   { key: 'practice', label: 'תרגול' },
   { key: 'stats', label: 'סטטיסטיקה' },
-  { key: 'manage', label: 'ניהול' },
+  // 'manage' is admin-only and appended at render time.
 ]
+const ADMIN_TAB = { key: 'manage', label: 'ניהול' }
 
 export default function App() {
-  const [db, dispatch] = useReducer(dbReducer, undefined, initDb)
+  const { user, loading } = useAuth()
+
+  // Gate the whole app behind Google sign-in.
+  if (loading) {
+    return (
+      <div className="app">
+        <div className="login-screen">
+          <p className="muted">טוען…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) return <Login />
+
+  return <StudyApp user={user} />
+}
+
+function StudyApp({ user }) {
+  const [db, dispatch] = useReducer(dbReducer, emptyDb())
   const [tab, setTab] = useState('practice')
+  // 'loading' until the first remote fetch resolves; then 'ready' or 'error'.
+  const [status, setStatus] = useState('loading')
+  const [loadError, setLoadError] = useState(null)
 
-  // Mirror to localStorage on every db change.
+  // Load the db from Supabase on sign-in. Supabase is the source of truth; if
+  // the network is down we fall back to the last cached copy so practice still
+  // works offline (the offline write-queue comes in a later phase).
   useEffect(() => {
-    saveDb(db)
-  }, [db])
+    let active = true
+    setStatus('loading')
+    fetchRemoteDb(user.id)
+      .then((remote) => {
+        if (!active) return
+        dispatch({ type: 'SET_DB', db: remote })
+        saveDb(remote)
+        setStatus('ready')
+      })
+      .catch((err) => {
+        if (!active) return
+        const cached = loadDb()
+        if (cached) dispatch({ type: 'SET_DB', db: cached })
+        setLoadError(err.message || String(err))
+        setStatus(cached ? 'ready' : 'error')
+      })
+    return () => {
+      active = false
+    }
+  }, [user.id])
 
+  // Mirror to localStorage as an offline cache once we have real data.
+  useEffect(() => {
+    if (status === 'ready') saveDb(db)
+  }, [db, status])
+
+  // Dispatch that also persists answer-state changes to Supabase. Updates
+  // apply to local state immediately (optimistic); the write happens in the
+  // background. Passed to children in place of the raw dispatch.
+  const persistDispatch = useCallback(
+    (action) => {
+      dispatch(action)
+      if (action.type === 'RECORD_ANSWER') {
+        recordAnswer(user.id, action.id, action.choice, action.correct).catch(
+          (err) => console.error('Failed to save answer:', err),
+        )
+      } else if (action.type === 'RESET_STATE') {
+        resetAnswers(user.id, action.ids).catch((err) =>
+          console.error('Failed to reset answers:', err),
+        )
+      }
+    },
+    [user.id],
+  )
+
+  // Re-pull the whole db from Supabase (used after an admin import adds/updates
+  // questions in the shared store).
+  const refresh = useCallback(async () => {
+    const remote = await fetchRemoteDb(user.id)
+    dispatch({ type: 'SET_DB', db: remote })
+    saveDb(remote)
+  }, [user.id])
+
+  const admin = isAdmin(user)
+  const tabs = admin ? [...TABS, ADMIN_TAB] : TABS
   const hasQuestions = db.questions.length > 0
 
   return (
     <div className="app">
       <header className="topbar">
-        <h1 className="app-title">תרגול מבחנים</h1>
+        <div className="topbar-row">
+          <h1 className="app-title">תרגול מבחנים</h1>
+          <AccountMenu user={user} />
+        </div>
         <nav className="tabs" role="tablist">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               role="tab"
@@ -88,33 +165,58 @@ export default function App() {
       </header>
 
       <main className="content">
-        {!hasQuestions && tab !== 'manage' ? (
-          <EmptyState onLoadSeed={() => dispatch({ type: 'SET_DB', db: makeSeedDb() })} onGoManage={() => setTab('manage')} />
-        ) : tab === 'practice' ? (
-          <PracticeTab db={db} dispatch={dispatch} />
+        {status === 'loading' ? (
+          <p className="muted">טוען נתונים…</p>
+        ) : status === 'error' ? (
+          <div className="card">
+            <h2>שגיאה בטעינת הנתונים</h2>
+            <p className="muted">{loadError}</p>
+          </div>
+        ) : !hasQuestions && tab !== 'manage' ? (
+          <EmptyState admin={admin} onGoManage={() => setTab('manage')} />
+        ) : tab === 'manage' && admin ? (
+          <ImportExport db={db} dispatch={persistDispatch} onImported={refresh} />
         ) : tab === 'stats' ? (
           <Stats db={db} />
         ) : (
-          <ImportExport db={db} dispatch={dispatch} />
+          <PracticeTab db={db} dispatch={persistDispatch} />
         )}
       </main>
     </div>
   )
 }
 
-function EmptyState({ onLoadSeed, onGoManage }) {
+function AccountMenu({ user }) {
+  const email = user.email ?? ''
+  const name = user.user_metadata?.full_name || user.user_metadata?.name || email
+  return (
+    <div className="account">
+      <span className="account-name" title={email}>
+        {name}
+      </span>
+      <button className="btn btn-sm btn-ghost" onClick={() => signOut()}>
+        התנתק
+      </button>
+    </div>
+  )
+}
+
+function EmptyState({ admin, onGoManage }) {
   return (
     <div className="empty-state card">
       <h2>אין עדיין שאלות</h2>
-      <p>ייבא קובץ JSON של שאלות, או טען שאלות לדוגמה כדי להתחיל מיד.</p>
-      <div className="empty-actions">
-        <button className="btn btn-primary" onClick={onLoadSeed}>
-          טען שאלות לדוגמה
-        </button>
-        <button className="btn" onClick={onGoManage}>
-          ייבוא / ניהול נתונים
-        </button>
-      </div>
+      <p>
+        {admin
+          ? 'מאגר השאלות ריק. ייבא שאלות דרך לשונית הניהול.'
+          : 'מאגר השאלות ריק כרגע. שאלות מתווספות על ידי המנהל.'}
+      </p>
+      {admin && (
+        <div className="empty-actions">
+          <button className="btn" onClick={onGoManage}>
+            ניהול נתונים
+          </button>
+        </div>
+      )}
     </div>
   )
 }

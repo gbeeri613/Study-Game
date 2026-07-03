@@ -1,14 +1,18 @@
 import { useRef, useState } from 'react'
-import { exportDb, downloadBackup } from '../lib/storage.js'
-import { validateImport, replaceDb, mergeNewOnly } from '../lib/validate.js'
-import { makeSeedDb } from '../data/seed.js'
+import { exportDb } from '../lib/storage.js'
+import { validateImport } from '../lib/validate.js'
+import { upsertQuestions } from '../lib/api.js'
 
-export default function ImportExport({ db, dispatch }) {
+// Admin-only data management. This tab is only rendered for the admin; the
+// database's RLS is the real guard, so a non-admin who forced their way here
+// would still fail every write.
+export default function ImportExport({ db, dispatch, onImported }) {
   const fileRef = useRef(null)
-  // pending holds the parsed+validated import awaiting a Replace/Merge choice
+  // pending holds the parsed+validated import awaiting confirmation
   const [pending, setPending] = useState(null)
   const [report, setReport] = useState(null) // { errors, warnings, schemaWarning, validCount }
   const [notice, setNotice] = useState(null)
+  const [busy, setBusy] = useState(false)
 
   function handleFile(e) {
     const file = e.target.files && e.target.files[0]
@@ -38,31 +42,28 @@ export default function ImportExport({ db, dispatch }) {
     e.target.value = ''
   }
 
-  function doReplace() {
-    if (!pending) return
-    // Safety net: auto-download a backup of the CURRENT db before overwriting.
-    if (db.questions.length > 0) {
-      downloadBackup(db)
+  // Write the validated questions to the shared store (insert new, update
+  // existing by id). Never deletes, so no user loses answer state.
+  async function doImport() {
+    if (!pending || busy) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const written = await upsertQuestions(pending)
+      setNotice(`הייבוא הושלם. ${written} שאלות נכתבו למאגר המשותף.`)
+      setPending(null)
+      setReport(null)
+      if (onImported) await onImported()
+    } catch (err) {
+      setReport((r) => ({
+        errors: [`כתיבה למסד הנתונים נכשלה: ${err.message}`, ...(r?.errors ?? [])],
+        warnings: r?.warnings ?? [],
+        schemaWarning: r?.schemaWarning ?? null,
+        validCount: r?.validCount ?? 0,
+      }))
+    } finally {
+      setBusy(false)
     }
-    const ok = window.confirm(
-      `להחליף את כל מסד הנתונים ב-${pending.length} שאלות מהקובץ?\n\n` +
-        (db.questions.length > 0 ? 'גיבוי של הנתונים הנוכחיים ירד זה עתה למחשב.' : '') +
-        '\nפעולה זו מוחקת את המצב הנוכחי.',
-    )
-    if (!ok) return
-    dispatch({ type: 'SET_DB', db: replaceDb(pending) })
-    setNotice(`הוחלף בהצלחה. ${pending.length} שאלות נטענו.`)
-    setPending(null)
-    setReport(null)
-  }
-
-  function doMerge() {
-    if (!pending) return
-    const { db: merged, addedCount, skippedCount } = mergeNewOnly(db, pending)
-    dispatch({ type: 'SET_DB', db: merged })
-    setNotice(`מיזוג הושלם. נוספו ${addedCount} שאלות חדשות, דולגו ${skippedCount} קיימות.`)
-    setPending(null)
-    setReport(null)
   }
 
   function doExport() {
@@ -70,43 +71,24 @@ export default function ImportExport({ db, dispatch }) {
     setNotice('הקובץ יוצא והורד.')
   }
 
-  function loadSamples() {
-    if (db.questions.length > 0) {
-      const ok = window.confirm('טעינת שאלות לדוגמה תחליף את הנתונים הנוכחיים. להמשיך?')
-      if (!ok) return
-      downloadBackup(db)
-    }
-    dispatch({ type: 'SET_DB', db: makeSeedDb() })
-    setNotice('שאלות לדוגמה נטענו.')
-  }
-
-  function resetState() {
-    const ok = window.confirm('לאפס את כל מצב המענה (השאלות יישארו, אך יסומנו כלא נענו)?')
+  async function resetState() {
+    const ok = window.confirm(
+      'לאפס את מצב המענה שלך (השאלות יישארו, אך יסומנו כלא נענו)? ' +
+        'פעולה זו משפיעה רק על המשתמש שלך.',
+    )
     if (!ok) return
     dispatch({ type: 'RESET_STATE' })
-    setNotice('מצב המענה אופס.')
+    setNotice('מצב המענה שלך אופס.')
   }
 
   return (
     <div className="manage">
       <div className="card">
-        <h2>ייצוא / גיבוי</h2>
+        <h2>ייבוא / עדכון שאלות</h2>
         <p className="muted">
-          מוריד את כל מסד הנתונים (שאלות + מצב המענה) כקובץ JSON. זהו גם מסלול הסנכרון בין המכשירים
-          וגם מנגנון הגיבוי.
-        </p>
-        <p className="muted">כרגע במסד: <strong>{db.questions.length}</strong> שאלות.</p>
-        <button className="btn btn-primary" onClick={doExport} disabled={db.questions.length === 0}>
-          ייצא JSON
-        </button>
-      </div>
-
-      <div className="card">
-        <h2>ייבוא</h2>
-        <p className="muted">
-          בחר קובץ JSON. לאחר בדיקת תקינות תוכל לבחור בין <strong>החלפה</strong> (הקובץ הופך לכל
-          המסד — מסלול הסנכרון) לבין <strong>מיזוג</strong> (הוספת שאלות חדשות בלבד לפי id, ללא פגיעה
-          במצב הקיים).
+          בחר קובץ JSON של שאלות (מהצ׳אט שמייצר שאלות או קובץ גיבוי). לאחר בדיקת
+          תקינות, השאלות ייכתבו ל<strong>מאגר המשותף</strong>: שאלות חדשות יתווספו,
+          וקיימות (לפי <code>id</code>) יעודכנו. מצב המענה של המשתמשים לעולם אינו נמחק.
         </p>
         <input
           ref={fileRef}
@@ -145,11 +127,8 @@ export default function ImportExport({ db, dispatch }) {
             )}
             {pending && (
               <div className="import-actions">
-                <button className="btn btn-danger" onClick={doReplace}>
-                  החלפה (מוחק הכל)
-                </button>
-                <button className="btn btn-primary" onClick={doMerge}>
-                  מיזוג שאלות חדשות
+                <button className="btn btn-primary" onClick={doImport} disabled={busy}>
+                  {busy ? 'כותב…' : `ייבא ${pending.length} שאלות למאגר`}
                 </button>
               </div>
             )}
@@ -158,11 +137,22 @@ export default function ImportExport({ db, dispatch }) {
       </div>
 
       <div className="card">
+        <h2>ייצוא / גיבוי</h2>
+        <p className="muted">
+          מוריד את מצב המאגר הנוכחי כקובץ JSON (שאלות + מצב המענה שלך) — גיבוי מקומי
+          ותיעוד.
+        </p>
+        <p className="muted">כרגע במאגר: <strong>{db.questions.length}</strong> שאלות.</p>
+        <button className="btn" onClick={doExport} disabled={db.questions.length === 0}>
+          ייצא JSON
+        </button>
+      </div>
+
+      <div className="card">
         <h2>כלים</h2>
         <div className="tool-buttons">
-          <button className="btn" onClick={loadSamples}>טען שאלות לדוגמה</button>
           <button className="btn btn-ghost" onClick={resetState} disabled={db.questions.length === 0}>
-            אפס מצב מענה
+            אפס את מצב המענה שלי
           </button>
         </div>
       </div>
