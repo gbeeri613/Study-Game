@@ -119,3 +119,19 @@ export async function upsertQuestions(questions) {
   }
   return written
 }
+
+// Permanently delete questions by id from the shared store. Every user's answer
+// rows for these questions cascade away automatically (user_answers FK is
+// ON DELETE CASCADE). Chunked to keep each request's id list within URL limits.
+// RLS lets only the admin succeed. Returns the number of ids requested.
+export async function deleteQuestions(ids) {
+  const CHUNK = 100
+  let deleted = 0
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK)
+    const { error } = await supabase.from('questions').delete().in('id', slice)
+    if (error) throw error
+    deleted += slice.length
+  }
+  return deleted
+}

@@ -1,19 +1,50 @@
 import { useRef, useState } from 'react'
 import { exportDb } from '../lib/storage.js'
 import { validateImport } from '../lib/validate.js'
-import { upsertQuestions } from '../lib/api.js'
-import { IconUpload, IconDownload, IconReset, IconCheck } from './Icons.jsx'
+import { upsertQuestions, deleteQuestions } from '../lib/api.js'
+import { distinctValues, NONE_VALUE } from '../lib/session.js'
+import { courseLabel } from '../data/labels.js'
+import {
+  IconUpload,
+  IconDownload,
+  IconReset,
+  IconCheck,
+  IconTrash,
+  IconAlert,
+  IconChevronDown,
+} from './Icons.jsx'
+
+// The bucket a question's course falls under (missing course → NONE sentinel),
+// matching how the filter/dropdown code groups them.
+function courseKey(q) {
+  const v = q.course
+  return v === undefined || v === null || v === '' ? NONE_VALUE : String(v)
+}
 
 // Admin-only data management. This tab is only rendered for the admin; the
 // database's RLS is the real guard, so a non-admin who forced their way here
 // would still fail every write.
-export default function ImportExport({ db, dispatch, onImported }) {
+export default function ImportExport({ db, dispatch, onRefresh }) {
   const fileRef = useRef(null)
   // pending holds the parsed+validated import awaiting confirmation
   const [pending, setPending] = useState(null)
   const [report, setReport] = useState(null) // { errors, warnings, schemaWarning, validCount }
   const [notice, setNotice] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  // Delete-questions section: which course is selected, and whether the
+  // confirmation dialog is open.
+  const [delCourse, setDelCourse] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  // Course options + how many questions each holds, so the admin sees the
+  // blast radius before deleting.
+  const courseValues = distinctValues(db.questions, 'course')
+  const delIds = delCourse
+    ? db.questions.filter((q) => courseKey(q) === delCourse).map((q) => q.id)
+    : []
+  const delCourseName =
+    delCourse === NONE_VALUE ? 'ללא קורס' : courseLabel(delCourse)
 
   function handleFile(e) {
     const file = e.target.files && e.target.files[0]
@@ -54,7 +85,7 @@ export default function ImportExport({ db, dispatch, onImported }) {
       setNotice(`הייבוא הושלם. ${written} שאלות נכתבו למאגר המשותף.`)
       setPending(null)
       setReport(null)
-      if (onImported) await onImported()
+      if (onRefresh) await onRefresh()
     } catch (err) {
       setReport((r) => ({
         errors: [`כתיבה למסד הנתונים נכשלה: ${err.message}`, ...(r?.errors ?? [])],
@@ -80,6 +111,27 @@ export default function ImportExport({ db, dispatch, onImported }) {
     if (!ok) return
     dispatch({ type: 'RESET_STATE' })
     setNotice('מצב המענה שלך אופס.')
+  }
+
+  // Permanently delete every question in the selected course from the shared
+  // store. Only reached after the confirmation dialog. Refreshes the db so the
+  // deleted questions disappear everywhere immediately.
+  async function doDelete() {
+    if (!delIds.length || busy) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const deleted = await deleteQuestions(delIds)
+      setConfirmOpen(false)
+      setDelCourse('')
+      setNotice(`נמחקו ${deleted} שאלות מהמאגר המשותף.`)
+      if (onRefresh) await onRefresh()
+    } catch (err) {
+      setConfirmOpen(false)
+      setNotice(`מחיקה נכשלה: ${err.message}`)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -155,6 +207,48 @@ export default function ImportExport({ db, dispatch, onImported }) {
       </div>
 
       <div className="card">
+        <h2>מחיקת שאלות</h2>
+        <p className="muted">
+          מחיקה <strong>לצמיתות</strong> של כל שאלות הקורס הנבחר מ
+          <strong>המאגר המשותף</strong>. הפעולה משפיעה על כל המשתמשים ואינה
+          הפיכה. בחר קורס ואשר בתיבת האישור.
+        </p>
+        <div className="field">
+          <span className="field-label">קורס למחיקה</span>
+          <div className="select-wrap">
+            <select
+              className="select"
+              value={delCourse}
+              onChange={(e) => setDelCourse(e.target.value)}
+              disabled={courseValues.length === 0}
+            >
+              <option value="">בחר קורס…</option>
+              {courseValues.map((v) => {
+                const count = db.questions.filter((q) => courseKey(q) === v).length
+                const name = v === NONE_VALUE ? 'ללא קורס' : courseLabel(v)
+                return (
+                  <option key={v} value={v}>
+                    {name} ({count})
+                  </option>
+                )
+              })}
+            </select>
+            <IconChevronDown size={17} />
+          </div>
+        </div>
+        <div className="tool-buttons">
+          <button
+            className="btn btn-danger"
+            onClick={() => setConfirmOpen(true)}
+            disabled={delIds.length === 0 || busy}
+          >
+            <IconTrash size={17} />
+            {delCourse ? `מחק ${delIds.length} שאלות` : 'מחק את כל שאלות הקורס'}
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
         <h2>כלים</h2>
         <div className="tool-buttons">
           <button className="btn btn-danger" onClick={resetState} disabled={db.questions.length === 0}>
@@ -163,6 +257,45 @@ export default function ImportExport({ db, dispatch, onImported }) {
           </button>
         </div>
       </div>
+
+      {confirmOpen && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !busy && setConfirmOpen(false)}
+        >
+          <div
+            className="modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="del-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="modal-icon modal-icon-danger">
+              <IconAlert size={26} />
+            </span>
+            <h3 id="del-title">מחיקת שאלות</h3>
+            <p className="muted">
+              פעולה זו תמחק <strong>{delIds.length}</strong> שאלות מהקורס{' '}
+              <strong>{delCourseName}</strong> מהמאגר המשותף. המחיקה אינה הפיכה
+              ותשפיע על כל המשתמשים.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setConfirmOpen(false)}
+                disabled={busy}
+              >
+                ביטול
+              </button>
+              <button className="btn btn-danger" onClick={doDelete} disabled={busy}>
+                <IconTrash size={16} />
+                {busy ? 'מוחק…' : 'מחק לצמיתות'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div className="toast">

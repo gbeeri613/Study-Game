@@ -201,7 +201,7 @@ function StudyApp({ user }) {
           <EmptyState admin={admin} onGoManage={() => setTab('manage')} />
         ) : tab === 'manage' && admin ? (
           <div className="tab-panel" key="manage">
-            <ImportExport db={db} dispatch={persistDispatch} onImported={refresh} />
+            <ImportExport db={db} dispatch={persistDispatch} onRefresh={refresh} />
           </div>
         ) : tab === 'stats' ? (
           <div className="tab-panel" key="stats">
