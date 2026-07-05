@@ -6,7 +6,9 @@ file is the entire database** — it holds both the questions and your
 answer-state. You sync between devices by exporting the JSON on one and
 importing it on the other. Progress persists per-device in `localStorage`.
 
-Built with Vite + React, no router, no state library.
+Built with Vite + React, no state library. There's no router library either —
+the `view` state machine is mirrored into the browser History API so the phone's
+Back button walks back through the app (setup → home, etc.) instead of exiting.
 
 ## Run locally
 
@@ -88,7 +90,7 @@ export/import. To update the app, push to GitHub and Vercel redeploys.
 index.html                 RTL, lang="he", manifest link
 src/
   main.jsx                 React entry
-  App.jsx                  db reducer + tabs + localStorage mirror
+  App.jsx                  db reducer + history-synced view machine + Supabase mirror
   styles.css               all styling (RTL, mobile-first)
   data/
     labels.js              subject slug → Hebrew label (add subjects here)

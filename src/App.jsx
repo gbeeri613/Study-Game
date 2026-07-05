@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
 import { fetchRemoteDb, recordAnswer, resetAnswers } from './lib/api.js'
 import { distinctValues } from './lib/session.js'
@@ -60,6 +60,16 @@ const DEFAULT_CONFIG = {
   topic: 'all',
   difficulty: [], // advanced multi-select; empty = all
 }
+
+// ---- history-backed navigation ---------------------------------------------
+// The app has no router by design. To make the phone/browser Back button work
+// (instead of exiting the app), we mirror the `view` state machine into the
+// History API. Every sub-screen lives one level above `home`: navigating
+// home→sub pushes a history entry (Back returns home), while moves *between*
+// sub-screens replace it (the stack never grows, so Back from a finished
+// summary won't drop you into the completed session). Depth drives push vs.
+// replace.
+const VIEW_DEPTH = { home: 0, setup: 1, session: 1, summary: 1, admin: 1 }
 
 export default function App() {
   const { user, loading } = useAuth()
@@ -144,6 +154,47 @@ function StudyApp({ user }) {
     saveDb(remote)
   }, [user.id])
 
+  // Keep the latest view available to the (stable) navigate callback without
+  // making it depend on `view`.
+  const viewRef = useRef(view)
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
+
+  // Normalize the current history entry to `home` on load. The app always boots
+  // at home, but history.state survives a page reload — this discards any stale
+  // entry so Back has a clean home base to return to.
+  useEffect(() => {
+    window.history.replaceState({ view: 'home' }, '')
+  }, [])
+
+  // The Back button (hardware or browser) fires popstate; derive the view from
+  // the restored entry.
+  useEffect(() => {
+    function onPop(e) {
+      setView((e.state && e.state.view) || 'home')
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  // Forward navigation: push when going deeper (home→sub) so Back returns to the
+  // previous screen; replace when moving laterally between sub-screens so the
+  // history stack stays shallow.
+  const navigate = useCallback((next) => {
+    const prev = viewRef.current
+    if (next === prev) return
+    const method =
+      (VIEW_DEPTH[next] ?? 0) > (VIEW_DEPTH[prev] ?? 0) ? 'pushState' : 'replaceState'
+    window.history[method]({ view: next }, '')
+    viewRef.current = next
+    setView(next)
+  }, [])
+
+  // Back navigation for in-app Cancel/Exit/Home buttons — routed through history
+  // so on-screen Back behaves identically to the device Back button.
+  const goBack = useCallback(() => window.history.back(), [])
+
   const admin = isAdmin(user)
   const hasQuestions = db.questions.length > 0
 
@@ -157,7 +208,7 @@ function StudyApp({ user }) {
       if (!course || !courses.includes(String(course))) course = courses[0] || ''
       return { ...c, course, filterBy: 'all', unit: 'all', topic: 'all' }
     })
-    setView('setup')
+    navigate('setup')
   }
 
   // Launch a practice session — either a filtered slice (ids=null) or a fixed
@@ -165,12 +216,12 @@ function StudyApp({ user }) {
   function beginSession(ids) {
     setReviewIds(ids)
     setSessionNonce((n) => n + 1)
-    setView('session')
+    navigate('session')
   }
 
   function handleComplete(res) {
     setResult(res)
-    setView('summary')
+    navigate('summary')
   }
 
   const inFocus = view === 'session' || view === 'summary'
@@ -197,7 +248,7 @@ function StudyApp({ user }) {
     body = (
       <div className="tab-panel" key="admin">
         <header className="setup-header">
-          <button className="btn-icon" aria-label="חזרה" onClick={() => setView('home')}>
+          <button className="btn-icon" aria-label="חזרה" onClick={goBack}>
             <IconChevronRight size={22} />
           </button>
           <h2 className="setup-title">ניהול נתונים</h2>
@@ -207,7 +258,7 @@ function StudyApp({ user }) {
       </div>
     )
   } else if (!hasQuestions) {
-    body = <EmptyState admin={admin} onGoManage={() => setView('admin')} />
+    body = <EmptyState admin={admin} onGoManage={() => navigate('admin')} />
   } else if (view === 'session') {
     body = (
       <Practice
@@ -217,7 +268,7 @@ function StudyApp({ user }) {
         config={config}
         overrideQuestionIds={reviewIds}
         onComplete={handleComplete}
-        onExit={() => setView('home')}
+        onExit={goBack}
       />
     )
   } else if (view === 'summary' && result) {
@@ -225,7 +276,7 @@ function StudyApp({ user }) {
       <Summary
         result={result}
         db={db}
-        onHome={() => setView('home')}
+        onHome={goBack}
         onAgain={() => beginSession(null)}
         onReview={(ids) => beginSession(ids)}
       />
@@ -240,7 +291,7 @@ function StudyApp({ user }) {
           setConfig(cfg)
           beginSession(null)
         }}
-        onCancel={() => setView('home')}
+        onCancel={goBack}
       />
     )
   } else {
@@ -250,7 +301,7 @@ function StudyApp({ user }) {
         user={user}
         admin={admin}
         onStart={openSetup}
-        onOpenAdmin={() => setView('admin')}
+        onOpenAdmin={() => navigate('admin')}
       />
     )
   }
