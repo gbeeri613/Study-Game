@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  IconCap,
-  IconPlayLeft,
-  IconSettings,
-  IconLogOut,
-  IconTrophy,
-} from './Icons.jsx'
+import { IconCap, IconArrowLeft, IconSettings, IconLogOut } from './Icons.jsx'
 import { courseLabel } from '../data/labels.js'
 import { NONE_VALUE } from '../lib/session.js'
 import { signOut } from '../lib/useAuth.js'
@@ -149,7 +143,7 @@ function CourseCard({ course, onStart }) {
       </ul>
       <button className="course-cta" onClick={() => onStart(course.slug)}>
         תרגל
-        <IconPlayLeft size={15} />
+        <IconArrowLeft size={16} />
       </button>
     </div>
   )
@@ -182,7 +176,7 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
           <span className="brand-mark">
             <IconCap size={20} />
           </span>
-          <h1 className="app-title">תרגול מבחנים</h1>
+          <h1 className="app-title">תרגול חץ 26׳</h1>
         </div>
         <div className="home-top-actions">
           <AccountMenu user={user} />
@@ -205,8 +199,10 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
         ))}
       </div>
 
-      {/* Leaderboard (Phase 3) — sticky dock that the cards scroll under, with
-          a top fade so the transition is gentle. */}
+      {/* Leaderboard (Phase 3) — sticky dock that the cards scroll under, with a
+          top fade so the transition is gentle. Commented out until the real
+          board is built; re-enable together with `.home` padding-bottom and
+          import IconTrophy.
       <div className="home-lb-dock">
         <div className="home-lb-inner">
           <div className="card leaderboard-stub">
@@ -220,6 +216,7 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
           </div>
         </div>
       </div>
+      */}
     </div>
   )
 }
