@@ -1191,12 +1191,78 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .home-greeting { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
 .home-sub { margin: 5px 0 0; color: var(--muted); font-size: 15px; }
 
-.home-metrics {
+/* Per-course donut cards — responsive grid; columns auto-fit and stretch. */
+.course-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
   margin-bottom: 14px;
 }
+.course-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  animation: fadeUp var(--dur-2) var(--ease-out) both;
+}
+.course-cta {
+  margin-top: 2px;
+  width: 100%;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--grad-primary);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--glow-primary);
+  transition: transform var(--dur-1) var(--ease-out), filter var(--dur-1);
+}
+.course-cta:hover { filter: brightness(1.08); }
+.course-cta:active { transform: scale(0.95); }
+.course-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.donut { position: relative; width: 116px; height: 116px; }
+.donut svg { width: 100%; height: 100%; }
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.donut-total { font-size: 24px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.donut-cap { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+.course-legend { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 7px; }
+.course-legend li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.legend-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 3px; }
+.dot-ok { background: var(--ok); }
+.dot-bad { background: var(--bad); }
+.dot-none { background: #7b818f; }
+.legend-name { color: var(--text-2); }
+.legend-value { margin-inline-start: auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .leaderboard-stub { display: flex; align-items: center; gap: 12px; }
 .lb-stub-icon {
@@ -1213,12 +1279,27 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .lb-stub-text strong { font-size: 14.5px; font-weight: 700; }
 .lb-stub-text span { font-size: 12.5px; color: var(--muted); }
 
-.home-start {
-  width: 100%;
-  border-radius: var(--radius-full);
-  font-size: 16px;
-  margin-top: 6px;
+/* Scroll clearance for the fixed leaderboard dock — restore to ~150px when the
+   dock is re-enabled (Phase 3). */
+.home { padding-bottom: 8px; }
+
+/* Sticky leaderboard dock — full-viewport-width, solid app bg that tapers to
+   transparent at the top so cards scroll under it with a gentle fade. */
+.home-lb-dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 40px 20px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 56%, rgba(11, 13, 18, 0));
 }
+.home-lb-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  pointer-events: auto;
+}
+.home-lb-inner .card { margin-bottom: 0; }
 
 /* ---- Session setup -------------------------------------------------------------------------------- */
 
@@ -1257,7 +1338,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 /* Stepped question-count slider — real draggable range input */
 .qslider { display: flex; flex-direction: column; gap: 6px; }
-.qslider-head { display: flex; align-items: baseline; justify-content: space-between; }
+.qslider-head { display: flex; align-items: center; justify-content: space-between; }
 .qslider-count {
   font-size: 20px;
   font-weight: 800;
@@ -1389,6 +1470,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 @media (max-width: 480px) {
   .app { padding-inline: 16px; }
+  .home-lb-dock { padding-inline: 16px; }
   .stats-summary { grid-template-columns: repeat(2, 1fr); }
   .breakdown-row { grid-template-columns: 92px 1fr; }
   .nav-item { width: 88px; }

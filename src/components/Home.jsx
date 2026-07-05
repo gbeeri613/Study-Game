@@ -1,41 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  IconCap,
-  IconPlay,
-  IconSettings,
-  IconLogOut,
-  IconTrophy,
-} from './Icons.jsx'
+import { IconCap, IconArrowLeft, IconSettings, IconLogOut } from './Icons.jsx'
+import { courseLabel } from '../data/labels.js'
+import { NONE_VALUE } from '../lib/session.js'
 import { signOut } from '../lib/useAuth.js'
 
-// Animate a number from 0 to its target with an ease-out curve.
-function useCountUp(target, duration = 700) {
-  const [value, setValue] = useState(0)
-  useEffect(() => {
-    let raf
-    const t0 = performance.now()
-    const step = (t) => {
-      const p = Math.min(1, (t - t0) / duration)
-      setValue(Math.round(target * (1 - Math.pow(1 - p, 3))))
-      if (p < 1) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(raf)
-  }, [target, duration])
-  return value
+// Segment colours: correct = green, incorrect = red, not answered = grey.
+const SEG = {
+  correct: 'var(--ok)',
+  incorrect: 'var(--bad)',
+  unanswered: '#7b818f',
 }
 
-function Metric({ value, caption, suffix = '', accent = false }) {
-  const shown = useCountUp(value)
-  return (
-    <div className={`stat-card ${accent ? 'stat-accent' : ''}`}>
-      <div className="stat-num">
-        {shown}
-        {suffix}
-      </div>
-      <div className="stat-cap">{caption}</div>
-    </div>
-  )
+function courseName(slug) {
+  return slug === NONE_VALUE ? 'ללא קורס' : courseLabel(slug)
 }
 
 function AccountMenu({ user }) {
@@ -82,31 +59,112 @@ function AccountMenu({ user }) {
   )
 }
 
-// The greeting uses just the first token of the display name.
 function firstName(user) {
   const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email || ''
   return String(name).trim().split(/\s+/)[0] || ''
 }
 
+// A donut of a course's questions split into correct / incorrect / unanswered.
+function CourseDonut({ correct, incorrect, unanswered, total }) {
+  const size = 112
+  const stroke = 13
+  const r = (size - stroke) / 2
+  const c = size / 2
+  const C = 2 * Math.PI * r
+
+  const segments = [
+    { v: correct, color: SEG.correct },
+    { v: incorrect, color: SEG.incorrect },
+    { v: unanswered, color: SEG.unanswered },
+  ]
+  let acc = 0
+
+  return (
+    <div className="donut">
+      <svg viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={c} cy={c} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={stroke} />
+        {total > 0 &&
+          segments.map((s, i) => {
+            if (s.v <= 0) return null
+            const frac = s.v / total
+            const dash = frac * C
+            const offset = -acc * C
+            acc += frac
+            return (
+              <circle
+                key={i}
+                cx={c}
+                cy={c}
+                r={r}
+                fill="none"
+                stroke={s.color}
+                strokeWidth={stroke}
+                strokeDasharray={`${dash} ${C - dash}`}
+                strokeDashoffset={offset}
+                transform={`rotate(-90 ${c} ${c})`}
+              />
+            )
+          })}
+      </svg>
+      <div className="donut-center">
+        <span className="donut-total">{total}</span>
+        <span className="donut-cap">שאלות</span>
+      </div>
+    </div>
+  )
+}
+
+function CourseCard({ course, onStart }) {
+  return (
+    <div className="course-card">
+      <div className="course-card-title">{courseName(course.slug)}</div>
+      <CourseDonut
+        correct={course.correct}
+        incorrect={course.incorrect}
+        unanswered={course.unanswered}
+        total={course.total}
+      />
+      <ul className="course-legend">
+        <li>
+          <span className="legend-dot dot-ok" />
+          <span className="legend-name">צדקת</span>
+          <span className="legend-value">{course.correct}</span>
+        </li>
+        <li>
+          <span className="legend-dot dot-bad" />
+          <span className="legend-name">טעית</span>
+          <span className="legend-value">{course.incorrect}</span>
+        </li>
+        <li>
+          <span className="legend-dot dot-none" />
+          <span className="legend-name">לא ענית</span>
+          <span className="legend-value">{course.unanswered}</span>
+        </li>
+      </ul>
+      <button className="course-cta" onClick={() => onStart(course.slug)}>
+        תרגל
+        <IconArrowLeft size={16} />
+      </button>
+    </div>
+  )
+}
+
 export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
-  const stats = useMemo(() => {
-    const questions = db.questions
-    const total = questions.length
-    let answered = 0
-    let correct = 0
-    for (const q of questions) {
-      if (q.answered_at != null) {
-        answered += 1
-        if (q.correct) correct += 1
-      }
+  // Per-course tallies of correct / incorrect / unanswered.
+  const courses = useMemo(() => {
+    const map = new Map()
+    for (const q of db.questions) {
+      const slug = q.course == null || q.course === '' ? NONE_VALUE : q.course
+      if (!map.has(slug)) map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0 })
+      const row = map.get(slug)
+      row.total += 1
+      if (q.answered_at == null) row.unanswered += 1
+      else if (q.correct) row.correct += 1
+      else row.incorrect += 1
     }
-    return {
-      total,
-      answered,
-      correct,
-      mastery: total === 0 ? 0 : Math.round((correct / total) * 100),
-      accuracy: answered === 0 ? 0 : Math.round((correct / answered) * 100),
-    }
+    return [...map.values()].sort((a, b) =>
+      courseName(a.slug).localeCompare(courseName(b.slug), 'he'),
+    )
   }, [db.questions])
 
   const name = firstName(user)
@@ -118,16 +176,12 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
           <span className="brand-mark">
             <IconCap size={20} />
           </span>
-          <h1 className="app-title">תרגול מבחנים</h1>
+          <h1 className="app-title">תרגול חץ 26׳</h1>
         </div>
         <div className="home-top-actions">
           <AccountMenu user={user} />
           {admin && (
-            <button
-              className="btn-icon home-cog"
-              aria-label="ניהול"
-              onClick={onOpenAdmin}
-            >
+            <button className="btn-icon home-cog" aria-label="ניהול" onClick={onOpenAdmin}>
               <IconSettings size={20} />
             </button>
           )}
@@ -135,33 +189,34 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
       </header>
 
       <section className="home-hero">
-        <p className="home-greeting">
-          {name ? `היי, ${name}` : 'היי'} 👋
-        </p>
-        <p className="home-sub">מוכנים לסבב תרגול?</p>
+        <p className="home-greeting">{name ? `היי, ${name}` : 'היי'} 👋</p>
+        <p className="home-sub">בחרו קורס והתחילו לתרגל</p>
       </section>
 
-      <div className="home-metrics">
-        <Metric value={stats.answered} caption="שאלות נענו" />
-        <Metric value={stats.mastery} suffix="%" caption="שליטה" accent />
-        <Metric value={stats.accuracy} suffix="%" caption="דיוק" />
+      <div className="course-grid">
+        {courses.map((c) => (
+          <CourseCard key={c.slug ?? '__none__'} course={c} onStart={onStart} />
+        ))}
       </div>
 
-      {/* Leaderboard (Phase 3) — placeholder while points/boards are unbuilt. */}
-      <div className="card leaderboard-stub">
-        <div className="lb-stub-icon">
-          <IconTrophy size={20} />
-        </div>
-        <div className="lb-stub-text">
-          <strong>לוח מובילים</strong>
-          <span>נקודות ודירוג יגיעו בקרוב</span>
+      {/* Leaderboard (Phase 3) — sticky dock that the cards scroll under, with a
+          top fade so the transition is gentle. Commented out until the real
+          board is built; re-enable together with `.home` padding-bottom and
+          import IconTrophy.
+      <div className="home-lb-dock">
+        <div className="home-lb-inner">
+          <div className="card leaderboard-stub">
+            <div className="lb-stub-icon">
+              <IconTrophy size={20} />
+            </div>
+            <div className="lb-stub-text">
+              <strong>לוח מובילים</strong>
+              <span>נקודות ודירוג יגיעו בקרוב</span>
+            </div>
+          </div>
         </div>
       </div>
-
-      <button className="btn btn-primary home-start" onClick={onStart}>
-        <IconPlay size={18} />
-        התחל תרגול
-      </button>
+      */}
     </div>
   )
 }

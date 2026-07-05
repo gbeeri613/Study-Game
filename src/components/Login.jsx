@@ -29,7 +29,7 @@ export default function Login() {
         <div className="login-mark">
           <IconCap size={38} />
         </div>
-        <h1 className="login-title">תרגול מבחנים</h1>
+        <h1 className="login-title">תרגול חץ 26׳</h1>
         <p className="login-sub">
           שאלות תרגול מותאמות לחומר הקורס.
           <br />

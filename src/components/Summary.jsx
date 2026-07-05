@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { courseLabel } from '../data/labels.js'
-import { IconPlay, IconTarget2, IconChevronRight } from './Icons.jsx'
+import { IconPlayLeft, IconTarget2, IconChevronRight } from './Icons.jsx'
 
 // Grade → colour band. Drives the ring stroke and the score number colour.
 function gradeBand(grade) {
@@ -137,8 +137,8 @@ export default function Summary({ result, db, onHome, onAgain, onReview }) {
 
       <div className="summary-actions">
         <button className="btn btn-primary" onClick={onAgain}>
-          <IconPlay size={17} />
           תרגול נוסף
+          <IconPlayLeft size={17} />
         </button>
         {mistakes > 0 && (
           <button className="btn" onClick={() => onReview(mistakeIds)}>
