@@ -147,15 +147,15 @@ function StudyApp({ user }) {
   const admin = isAdmin(user)
   const hasQuestions = db.questions.length > 0
 
-  // Open the setup screen, seeding a valid course selection if needed.
-  function openSetup() {
+  // Open the setup screen. If a course is passed (from a Home card), preselect
+  // it; otherwise keep/repair the current selection.
+  function openSetup(courseSlug) {
     setReviewIds(null)
     setConfig((c) => {
-      const courses = distinctValues(db.questions, 'course')
-      if (!c.course || !courses.includes(c.course)) {
-        return { ...c, course: courses[0] || '', filterBy: 'all', unit: 'all', topic: 'all' }
-      }
-      return c
+      const courses = distinctValues(db.questions, 'course').map(String)
+      let course = courseSlug != null && courses.includes(String(courseSlug)) ? courseSlug : c.course
+      if (!course || !courses.includes(String(course))) course = courses[0] || ''
+      return { ...c, course, filterBy: 'all', unit: 'all', topic: 'all' }
     })
     setView('setup')
   }

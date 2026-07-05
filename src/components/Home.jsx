@@ -7,6 +7,7 @@ import {
   IconTrophy,
 } from './Icons.jsx'
 import { courseLabel } from '../data/labels.js'
+import { NONE_VALUE } from '../lib/session.js'
 import { signOut } from '../lib/useAuth.js'
 
 // Segment colours: correct = green, incorrect = red, not answered = grey.
@@ -14,6 +15,10 @@ const SEG = {
   correct: 'var(--ok)',
   incorrect: 'var(--bad)',
   unanswered: '#7b818f',
+}
+
+function courseName(slug) {
+  return slug === NONE_VALUE ? 'ללא קורס' : courseLabel(slug)
 }
 
 function AccountMenu({ user }) {
@@ -67,8 +72,8 @@ function firstName(user) {
 
 // A donut of a course's questions split into correct / incorrect / unanswered.
 function CourseDonut({ correct, incorrect, unanswered, total }) {
-  const size = 116
-  const stroke = 14
+  const size = 112
+  const stroke = 13
   const r = (size - stroke) / 2
   const c = size / 2
   const C = 2 * Math.PI * r
@@ -115,10 +120,10 @@ function CourseDonut({ correct, incorrect, unanswered, total }) {
   )
 }
 
-function CourseCard({ course }) {
+function CourseCard({ course, onStart }) {
   return (
     <div className="course-card">
-      <div className="course-card-title">{courseLabel(course.slug)}</div>
+      <div className="course-card-title">{courseName(course.slug)}</div>
       <CourseDonut
         correct={course.correct}
         incorrect={course.incorrect}
@@ -142,6 +147,10 @@ function CourseCard({ course }) {
           <span className="legend-value">{course.unanswered}</span>
         </li>
       </ul>
+      <button className="course-cta" onClick={() => onStart(course.slug)}>
+        תרגל
+        <IconPlayLeft size={15} />
+      </button>
     </div>
   )
 }
@@ -151,7 +160,7 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
   const courses = useMemo(() => {
     const map = new Map()
     for (const q of db.questions) {
-      const slug = q.course == null || q.course === '' ? null : q.course
+      const slug = q.course == null || q.course === '' ? NONE_VALUE : q.course
       if (!map.has(slug)) map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0 })
       const row = map.get(slug)
       row.total += 1
@@ -160,7 +169,7 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
       else row.incorrect += 1
     }
     return [...map.values()].sort((a, b) =>
-      courseLabel(a.slug).localeCompare(courseLabel(b.slug), 'he'),
+      courseName(a.slug).localeCompare(courseName(b.slug), 'he'),
     )
   }, [db.questions])
 
@@ -187,30 +196,30 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
 
       <section className="home-hero">
         <p className="home-greeting">{name ? `היי, ${name}` : 'היי'} 👋</p>
-        <p className="home-sub">מוכנים לסבב תרגול?</p>
+        <p className="home-sub">בחרו קורס והתחילו לתרגל</p>
       </section>
 
-      <div className="course-cards">
+      <div className="course-grid">
         {courses.map((c) => (
-          <CourseCard key={c.slug ?? '__none__'} course={c} />
+          <CourseCard key={c.slug ?? '__none__'} course={c} onStart={onStart} />
         ))}
       </div>
 
-      {/* Leaderboard (Phase 3) — placeholder while points/boards are unbuilt. */}
-      <div className="card leaderboard-stub">
-        <div className="lb-stub-icon">
-          <IconTrophy size={20} />
-        </div>
-        <div className="lb-stub-text">
-          <strong>לוח מובילים</strong>
-          <span>נקודות ודירוג יגיעו בקרוב</span>
+      {/* Leaderboard (Phase 3) — sticky dock that the cards scroll under, with
+          a top fade so the transition is gentle. */}
+      <div className="home-lb-dock">
+        <div className="home-lb-inner">
+          <div className="card leaderboard-stub">
+            <div className="lb-stub-icon">
+              <IconTrophy size={20} />
+            </div>
+            <div className="lb-stub-text">
+              <strong>לוח מובילים</strong>
+              <span>נקודות ודירוג יגיעו בקרוב</span>
+            </div>
+          </div>
         </div>
       </div>
-
-      <button className="btn btn-primary home-start" onClick={onStart}>
-        תרגול חדש
-        <IconPlayLeft size={18} />
-      </button>
     </div>
   )
 }

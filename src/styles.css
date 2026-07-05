@@ -1191,27 +1191,19 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .home-greeting { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
 .home-sub { margin: 5px 0 0; color: var(--muted); font-size: 15px; }
 
-/* Per-course donut cards — horizontally scrollable, bleeding to screen edges */
-.course-cards {
-  display: flex;
+/* Per-course donut cards — responsive grid; columns auto-fit and stretch. */
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-  margin-inline: -20px;
-  padding: 2px 20px 12px;
   margin-bottom: 14px;
-  scrollbar-width: none;
 }
-.course-cards::-webkit-scrollbar { display: none; }
 .course-card {
-  scroll-snap-align: start;
-  flex: 0 0 auto;
-  width: 176px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  min-width: 0;
   padding: 16px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1219,6 +1211,26 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   box-shadow: var(--shadow-1);
   animation: fadeUp var(--dur-2) var(--ease-out) both;
 }
+.course-cta {
+  margin-top: 2px;
+  width: 100%;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--grad-primary);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--glow-primary);
+  transition: transform var(--dur-1) var(--ease-out), filter var(--dur-1);
+}
+.course-cta:hover { filter: brightness(1.08); }
+.course-cta:active { transform: scale(0.95); }
 .course-card-title {
   font-size: 15px;
   font-weight: 700;
@@ -1266,12 +1278,26 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .lb-stub-text strong { font-size: 14.5px; font-weight: 700; }
 .lb-stub-text span { font-size: 12.5px; color: var(--muted); }
 
-.home-start {
-  width: 100%;
-  border-radius: var(--radius-full);
-  font-size: 16px;
-  margin-top: 6px;
+/* Scroll clearance so the last cards clear the fixed leaderboard dock. */
+.home { padding-bottom: 150px; }
+
+/* Sticky leaderboard dock — full-viewport-width, solid app bg that tapers to
+   transparent at the top so cards scroll under it with a gentle fade. */
+.home-lb-dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 40px 20px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, var(--bg) 56%, rgba(11, 13, 18, 0));
 }
+.home-lb-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  pointer-events: auto;
+}
+.home-lb-inner .card { margin-bottom: 0; }
 
 /* ---- Session setup -------------------------------------------------------------------------------- */
 
@@ -1442,7 +1468,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 @media (max-width: 480px) {
   .app { padding-inline: 16px; }
-  .course-cards { margin-inline: -16px; padding-inline: 16px; }
+  .home-lb-dock { padding-inline: 16px; }
   .stats-summary { grid-template-columns: repeat(2, 1fr); }
   .breakdown-row { grid-template-columns: 92px 1fr; }
   .nav-item { width: 88px; }
