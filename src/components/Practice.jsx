@@ -1,75 +1,49 @@
-import { useEffect, useMemo, useState } from 'react'
-import { applyFilters, buildSession, displayToOriginal } from '../lib/session.js'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  applyFilters,
+  buildSession,
+  configToFilters,
+  selectSessionQuestions,
+  displayToOriginal,
+} from '../lib/session.js'
 import { courseLabel } from '../data/labels.js'
 import { IconX, IconCheck, IconChevronLeft } from './Icons.jsx'
 
 // Hebrew letter prefixes for options (א, ב, ג, ...)
 const HEB_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י']
 
-// Animated score ring for the session summary.
-function ScoreRing({ pct }) {
-  const R = 52
-  const C = 2 * Math.PI * R
-  return (
-    <div className="score-ring">
-      <svg viewBox="0 0 120 120">
-        <defs>
-          <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#4d8dff" />
-            <stop offset="100%" stopColor="#8b6cf6" />
-          </linearGradient>
-        </defs>
-        <circle className="ring-track" cx="60" cy="60" r={R} />
-        <circle
-          className="ring-fill"
-          cx="60"
-          cy="60"
-          r={R}
-          stroke="url(#ring-grad)"
-          strokeDasharray={C}
-          strokeDashoffset={C * (1 - pct / 100)}
-          style={{ '--ring-c': C }}
-          transform="rotate(-90 60 60)"
-        />
-      </svg>
-      <div className="score-ring-label">
-        <span className="score-pct">{pct}%</span>
-      </div>
-    </div>
-  )
+// Pre-session answer bucket for a question (captured before this session
+// changes it), used to detect "turnarounds".
+function prevBucket(q) {
+  if (q.answered_at == null) return 'unanswered'
+  return q.correct ? 'correct' : 'incorrect'
 }
 
-function summaryTitle(pct) {
-  if (pct >= 90) return 'מעולה!'
-  if (pct >= 75) return 'כל הכבוד!'
-  if (pct >= 50) return 'עבודה טובה!'
-  return 'ממשיכים לתרגל!'
-}
-
-export default function Practice({ db, dispatch, config, onExit }) {
-  // Build the session ONCE (stable order + option permutations) from the
-  // questions matching the filters at start time.
+export default function Practice({ db, dispatch, config, overrideQuestionIds, onComplete, onExit }) {
+  // Build the session ONCE at mount. Either a fixed set of ids (mistakes review)
+  // or a learning-dense slice of the filtered pool, capped to config.count.
+  // Questions are shuffled for display; option order is shuffled per question.
   const session = useMemo(() => {
-    const matching = applyFilters(db.questions, config)
-    return buildSession(matching, {
-      order: config.shuffleQuestions ? 'shuffle' : 'sequential',
-      shuffleOptions: config.shuffleOptions,
-    })
+    let pool
+    if (overrideQuestionIds && overrideQuestionIds.length) {
+      const idset = new Set(overrideQuestionIds)
+      pool = db.questions.filter((q) => idset.has(q.id))
+    } else {
+      const matching = applyFilters(db.questions, configToFilters(config))
+      pool = selectSessionQuestions(matching, config.count)
+    }
+    return buildSession(pool, { order: 'shuffle', shuffleOptions: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const startRef = useRef(Date.now())
+  // First-attempt outcome per answered question, in answer order:
+  // { id, correct, prev }.
+  const outcomesRef = useRef([])
+
   const [idx, setIdx] = useState(0)
-  // Per-question interaction state:
-  //  - selectedSlot: the display slot currently shown as picked (null before the
-  //    first pick).
-  //  - attempted: whether the FIRST guess this session was already recorded. The
-  //    first pick is what gets saved; picking again afterwards gives feedback
-  //    without changing the recorded correct/incorrect.
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [attempted, setAttempted] = useState(false)
-  // First-attempt results for the end-of-session summary.
-  const [firstTryCorrect, setFirstTryCorrect] = useState(0)
-  const [done, setDone] = useState(false)
 
   const item = session[idx]
   // Live question (state may have been updated by a prior answer this session).
@@ -84,9 +58,49 @@ export default function Practice({ db, dispatch, config, onExit }) {
   const pickedOriginal = picked ? displayToOriginal(item, selectedSlot) : null
   const pickedCorrect = picked && pickedOriginal === liveQuestion?.answer
 
+  function buildResult() {
+    const outcomes = outcomesRef.current
+    const answered = outcomes.length
+    const firstTryCorrect = outcomes.filter((o) => o.correct).length
+    let bestRun = 0
+    let run = 0
+    for (const o of outcomes) {
+      if (o.correct) {
+        run += 1
+        if (run > bestRun) bestRun = run
+      } else {
+        run = 0
+      }
+    }
+    const turnarounds = outcomes.filter((o) => o.correct && o.prev !== 'correct').length
+    const mistakeIds = outcomes.filter((o) => !o.correct).map((o) => o.id)
+    return {
+      total: session.length,
+      answered,
+      firstTryCorrect,
+      bestRun,
+      turnarounds,
+      mistakeIds,
+      elapsedMs: Date.now() - startRef.current,
+      completed: answered >= session.length,
+      config,
+    }
+  }
+
+  function finish() {
+    onComplete(buildResult())
+  }
+
+  // The X button quits early: show a summary for what was answered, or bail
+  // straight home if nothing was attempted yet.
+  function quit() {
+    if (outcomesRef.current.length === 0) onExit()
+    else finish()
+  }
+
   function goNext() {
     if (atEnd) {
-      setDone(true)
+      finish()
       return
     }
     setIdx((i) => i + 1)
@@ -102,24 +116,17 @@ export default function Practice({ db, dispatch, config, onExit }) {
     // Only the first attempt is recorded — later picks never overwrite it.
     if (!attempted) {
       setAttempted(true)
-      if (correct) setFirstTryCorrect((n) => n + 1)
+      outcomesRef.current.push({ id: liveQuestion.id, correct, prev: prevBucket(item.question) })
       dispatch({ type: 'RECORD_ANSWER', id: liveQuestion.id, choice: originalIndex, correct })
     }
   }
 
-  // Keyboard: number keys pick an option (until solved); Enter/Space advance once
-  // any answer has been picked.
+  // Keyboard: number keys pick an option (until solved); Enter/Space advance
+  // once any answer has been picked.
   useEffect(() => {
     function onKey(e) {
       if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return
       if (!item) return
-      if (done) {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onExit()
-        }
-        return
-      }
       if (e.key >= '1' && e.key <= '9') {
         const slot = Number(e.key) - 1
         if (!pickedCorrect && slot < liveQuestion.options.length) {
@@ -137,7 +144,7 @@ export default function Practice({ db, dispatch, config, onExit }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item, selectedSlot, attempted, liveQuestion, idx, atEnd, done])
+  }, [item, selectedSlot, attempted, liveQuestion, idx, atEnd])
 
   if (session.length === 0) {
     return (
@@ -152,24 +159,6 @@ export default function Practice({ db, dispatch, config, onExit }) {
     )
   }
 
-  // End-of-session summary.
-  if (done) {
-    const pct = Math.round((firstTryCorrect / session.length) * 100)
-    return (
-      <div className="card summary-card">
-        <ScoreRing pct={pct} />
-        <h2 className="summary-title">{summaryTitle(pct)}</h2>
-        <p className="summary-sub">
-          ענית נכון על <strong>{firstTryCorrect}</strong> מתוך{' '}
-          <strong>{session.length}</strong> שאלות בניסיון הראשון
-        </p>
-        <button className="btn btn-primary" onClick={onExit}>
-          חזרה למסך הבחירה
-        </button>
-      </div>
-    )
-  }
-
   const hasExpl =
     Array.isArray(liveQuestion.option_explanations) &&
     liveQuestion.option_explanations.length === liveQuestion.options.length
@@ -180,7 +169,7 @@ export default function Practice({ db, dispatch, config, onExit }) {
   return (
     <div className="practice">
       <div className="practice-header">
-        <button className="btn btn-ghost btn-icon" onClick={onExit} aria-label="סיום התרגול">
+        <button className="btn btn-ghost btn-icon" onClick={quit} aria-label="סיום התרגול">
           <IconX size={19} />
         </button>
         <div className="progress-track">
