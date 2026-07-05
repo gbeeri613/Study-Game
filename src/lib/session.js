@@ -52,6 +52,38 @@ export function applyFilters(questions, filters = {}) {
   })
 }
 
+// Translate the session-setup `config` (single-course, plus optional advanced
+// axes) into the multi-select filter shape `applyFilters` expects. Course is a
+// single slug here but the filter layer works in arrays, so we wrap it. Only the
+// active sub-filter axis (unit OR topic) is forwarded.
+export function configToFilters(config) {
+  const filters = {
+    course: config.course ? [config.course] : [],
+    difficulty: config.difficulty || [],
+    state: config.state || [],
+  }
+  if (config.filterBy === 'unit') filters.unit = config.unit
+  else if (config.filterBy === 'topic') filters.topic = config.topic
+  return filters
+}
+
+// Pick which questions make up a capped session. Learning-dense first:
+// unanswered, then previously-incorrect, then previously-correct as filler —
+// each bucket shuffled — then take the first `count`. `count` falsy = take all.
+// (buildSession still shuffles the chosen slice for display order.)
+export function selectSessionQuestions(questions, count) {
+  const unanswered = []
+  const incorrect = []
+  const correct = []
+  for (const q of questions) {
+    if (q.answered_at == null) unanswered.push(q)
+    else if (q.correct) correct.push(q)
+    else incorrect.push(q)
+  }
+  const ordered = [...shuffled(unanswered), ...shuffled(incorrect), ...shuffled(correct)]
+  return count && count > 0 ? ordered.slice(0, count) : ordered
+}
+
 // Distinct values present for an axis (for populating dropdowns), sorted.
 export function distinctValues(questions, axis) {
   const set = new Set()

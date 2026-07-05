@@ -1,21 +1,15 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
 import { fetchRemoteDb, recordAnswer, resetAnswers } from './lib/api.js'
-import { useAuth, isAdmin, signOut } from './lib/useAuth.js'
-import FilterBar from './components/FilterBar.jsx'
+import { distinctValues } from './lib/session.js'
+import { useAuth, isAdmin } from './lib/useAuth.js'
+import Home from './components/Home.jsx'
+import SessionSetup from './components/SessionSetup.jsx'
 import Practice from './components/Practice.jsx'
-import Stats from './components/Stats.jsx'
+import Summary from './components/Summary.jsx'
 import ImportExport from './components/ImportExport.jsx'
 import Login from './components/Login.jsx'
-import {
-  IconCap,
-  IconTarget,
-  IconChart,
-  IconDatabase,
-  IconLogOut,
-  IconSparkles,
-  IconAlert,
-} from './components/Icons.jsx'
+import { IconCap, IconSparkles, IconAlert, IconChevronRight } from './components/Icons.jsx'
 
 // ---- db reducer ------------------------------------------------------------
 // Single source of truth for the whole database. Every action returns a NEW db
@@ -57,17 +51,19 @@ function dbReducer(db, action) {
   }
 }
 
-const TABS = [
-  { key: 'practice', label: 'תרגול', icon: IconTarget },
-  { key: 'stats', label: 'סטטיסטיקה', icon: IconChart },
-  // 'manage' is admin-only and appended at render time.
-]
-const ADMIN_TAB = { key: 'manage', label: 'ניהול', icon: IconDatabase }
+const DEFAULT_CONFIG = {
+  course: '', // single course slug; resolved to a real course when setup opens
+  state: ['unanswered', 'incorrect'], // multi-select of answer buckets (≥1)
+  count: 20, // session goal (slider)
+  filterBy: 'all', // advanced: 'all' | 'unit' | 'topic'
+  unit: 'all',
+  topic: 'all',
+  difficulty: [], // advanced multi-select; empty = all
+}
 
 export default function App() {
   const { user, loading } = useAuth()
 
-  // Gate the whole app behind Google sign-in.
   if (loading) {
     return (
       <div className="boot-screen">
@@ -86,27 +82,19 @@ export default function App() {
 
 function StudyApp({ user }) {
   const [db, dispatch] = useReducer(dbReducer, emptyDb())
-  const [tab, setTab] = useState('practice')
-  // 'loading' until the first remote fetch resolves; then 'ready' or 'error'.
+  // View state machine: home | setup | session | summary | admin.
+  const [view, setView] = useState('home')
   const [status, setStatus] = useState('loading')
   const [loadError, setLoadError] = useState(null)
 
-  // Practice filter/session config lives here so it survives tab switches.
-  const [config, setConfig] = useState({
-    course: [], // multi-select; empty = all
-    filterBy: 'all', // 'all' | 'unit' | 'topic' — mutually exclusive sub-filter
-    unit: 'all',
-    topic: 'all',
-    difficulty: [], // multi-select; empty = all
-    state: ['unanswered', 'incorrect'], // multi-select; empty = all
-    shuffleQuestions: true, // randomize question order each session
-    shuffleOptions: true,
-  })
-  const [session, setSession] = useState(null) // null = still on the setup screen
+  const [config, setConfig] = useState(DEFAULT_CONFIG)
+  // Non-null while running a fixed set of questions (mistakes review).
+  const [reviewIds, setReviewIds] = useState(null)
+  // Forces Practice to remount (and rebuild its session) on each launch.
+  const [sessionNonce, setSessionNonce] = useState(0)
+  const [result, setResult] = useState(null)
 
-  // Load the db from Supabase on sign-in. Supabase is the source of truth; if
-  // the network is down we fall back to the last cached copy so practice still
-  // works offline (the offline write-queue comes in a later phase).
+  // Load the db from Supabase on sign-in; fall back to cache if offline.
   useEffect(() => {
     let active = true
     setStatus('loading')
@@ -129,20 +117,17 @@ function StudyApp({ user }) {
     }
   }, [user.id])
 
-  // Mirror to localStorage as an offline cache once we have real data.
   useEffect(() => {
     if (status === 'ready') saveDb(db)
   }, [db, status])
 
-  // Dispatch that also persists answer-state changes to Supabase. Updates
-  // apply to local state immediately (optimistic); the write happens in the
-  // background. Passed to children in place of the raw dispatch.
+  // Dispatch that also persists answer-state changes to Supabase (optimistic).
   const persistDispatch = useCallback(
     (action) => {
       dispatch(action)
       if (action.type === 'RECORD_ANSWER') {
-        recordAnswer(user.id, action.id, action.choice, action.correct).catch(
-          (err) => console.error('Failed to save answer:', err),
+        recordAnswer(user.id, action.id, action.choice, action.correct).catch((err) =>
+          console.error('Failed to save answer:', err),
         )
       } else if (action.type === 'RESET_STATE') {
         resetAnswers(user.id, action.ids).catch((err) =>
@@ -153,8 +138,6 @@ function StudyApp({ user }) {
     [user.id],
   )
 
-  // Re-pull the whole db from Supabase (used after an admin import adds/updates
-  // questions in the shared store).
   const refresh = useCallback(async () => {
     const remote = await fetchRemoteDb(user.id)
     dispatch({ type: 'SET_DB', db: remote })
@@ -162,147 +145,119 @@ function StudyApp({ user }) {
   }, [user.id])
 
   const admin = isAdmin(user)
-  const tabs = admin ? [...TABS, ADMIN_TAB] : TABS
   const hasQuestions = db.questions.length > 0
 
-  // During an active practice session the app goes into focus mode: the
-  // header and bottom nav disappear and the session owns the screen.
-  const inSession = tab === 'practice' && session != null
+  // Open the setup screen, seeding a valid course selection if needed.
+  function openSetup() {
+    setReviewIds(null)
+    setConfig((c) => {
+      const courses = distinctValues(db.questions, 'course')
+      if (!c.course || !courses.includes(c.course)) {
+        return { ...c, course: courses[0] || '', filterBy: 'all', unit: 'all', topic: 'all' }
+      }
+      return c
+    })
+    setView('setup')
+  }
 
-  return (
-    <div className={`app ${inSession ? 'app-no-nav' : ''}`}>
-      {!inSession && (
-        <header className="topbar">
-          <div className="brand">
-            <span className="brand-mark">
-              <IconCap size={20} />
-            </span>
-            <h1 className="app-title">תרגול מבחנים</h1>
-          </div>
-          <AccountMenu user={user} />
+  // Launch a practice session — either a filtered slice (ids=null) or a fixed
+  // set of questions (mistakes review).
+  function beginSession(ids) {
+    setReviewIds(ids)
+    setSessionNonce((n) => n + 1)
+    setView('session')
+  }
+
+  function handleComplete(res) {
+    setResult(res)
+    setView('summary')
+  }
+
+  const inFocus = view === 'session' || view === 'summary'
+
+  let body
+  if (status === 'loading') {
+    body = (
+      <div className="loading-block">
+        <div className="spinner" />
+        <span>טוען נתונים…</span>
+      </div>
+    )
+  } else if (status === 'error') {
+    body = (
+      <div className="card error-card">
+        <span className="error-icon">
+          <IconAlert size={32} />
+        </span>
+        <h2>שגיאה בטעינת הנתונים</h2>
+        <p className="muted">{loadError}</p>
+      </div>
+    )
+  } else if (view === 'admin' && admin) {
+    body = (
+      <div className="tab-panel" key="admin">
+        <header className="setup-header">
+          <button className="btn-icon" aria-label="חזרה" onClick={() => setView('home')}>
+            <IconChevronRight size={22} />
+          </button>
+          <h2 className="setup-title">ניהול נתונים</h2>
+          <span className="setup-header-spacer" />
         </header>
-      )}
-
-      <main className="content">
-        {status === 'loading' ? (
-          <div className="loading-block">
-            <div className="spinner" />
-            <span>טוען נתונים…</span>
-          </div>
-        ) : status === 'error' ? (
-          <div className="card error-card">
-            <span className="error-icon">
-              <IconAlert size={32} />
-            </span>
-            <h2>שגיאה בטעינת הנתונים</h2>
-            <p className="muted">{loadError}</p>
-          </div>
-        ) : !hasQuestions && tab !== 'manage' ? (
-          <EmptyState admin={admin} onGoManage={() => setTab('manage')} />
-        ) : tab === 'manage' && admin ? (
-          <div className="tab-panel" key="manage">
-            <ImportExport db={db} dispatch={persistDispatch} onRefresh={refresh} />
-          </div>
-        ) : tab === 'stats' ? (
-          <div className="tab-panel" key="stats">
-            <Stats db={db} />
-          </div>
-        ) : session ? (
-          <Practice
-            db={db}
-            dispatch={persistDispatch}
-            config={config}
-            onExit={() => setSession(null)}
-          />
-        ) : (
-          <div className="tab-panel" key="practice">
-            <FilterBar
-              db={db}
-              config={config}
-              setConfig={setConfig}
-              onStart={() => setSession(true)}
-            />
-          </div>
-        )}
-      </main>
-
-      {!inSession && <BottomNav tabs={tabs} tab={tab} setTab={setTab} />}
-    </div>
-  )
-}
-
-function BottomNav({ tabs, tab, setTab }) {
-  const idx = Math.max(
-    0,
-    tabs.findIndex((t) => t.key === tab),
-  )
-  return (
-    <nav className="bottom-nav" role="tablist">
-      <span
-        className="nav-indicator"
-        style={{
-          width: `calc((100% - 10px) / ${tabs.length})`,
-          insetInlineStart: `calc(5px + ${idx} * (100% - 10px) / ${tabs.length})`,
-        }}
+        <ImportExport db={db} dispatch={persistDispatch} onRefresh={refresh} />
+      </div>
+    )
+  } else if (!hasQuestions) {
+    body = <EmptyState admin={admin} onGoManage={() => setView('admin')} />
+  } else if (view === 'session') {
+    body = (
+      <Practice
+        key={sessionNonce}
+        db={db}
+        dispatch={persistDispatch}
+        config={config}
+        overrideQuestionIds={reviewIds}
+        onComplete={handleComplete}
+        onExit={() => setView('home')}
       />
-      {tabs.map((t) => {
-        const TabIcon = t.icon
-        return (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            className={`nav-item ${tab === t.key ? 'nav-item-active' : ''}`}
-            onClick={() => setTab(t.key)}
-          >
-            <TabIcon size={21} />
-            <span>{t.label}</span>
-          </button>
-        )
-      })}
-    </nav>
-  )
-}
-
-function AccountMenu({ user }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onDoc(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', onDoc)
-    return () => document.removeEventListener('pointerdown', onDoc)
-  }, [open])
-
-  const email = user.email ?? ''
-  const name = user.user_metadata?.full_name || user.user_metadata?.name || email
-  const initial = (name || '?').trim().charAt(0).toUpperCase()
+    )
+  } else if (view === 'summary' && result) {
+    body = (
+      <Summary
+        result={result}
+        db={db}
+        onHome={() => setView('home')}
+        onAgain={() => beginSession(null)}
+        onReview={(ids) => beginSession(ids)}
+      />
+    )
+  } else if (view === 'setup') {
+    body = (
+      <SessionSetup
+        db={db}
+        config={config}
+        setConfig={setConfig}
+        onStart={(cfg) => {
+          setConfig(cfg)
+          beginSession(null)
+        }}
+        onCancel={() => setView('home')}
+      />
+    )
+  } else {
+    body = (
+      <Home
+        db={db}
+        user={user}
+        admin={admin}
+        onStart={openSetup}
+        onOpenAdmin={() => setView('admin')}
+      />
+    )
+  }
 
   return (
-    <div className="account" ref={ref}>
-      <button
-        className="avatar"
-        aria-label="חשבון"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {initial}
-      </button>
-      {open && (
-        <div className="account-menu">
-          <div className="account-info">
-            <span className="account-name">{name}</span>
-            <span className="account-email">{email}</span>
-          </div>
-          <button className="menu-item" onClick={() => signOut()}>
-            <IconLogOut size={16} />
-            התנתקות
-          </button>
-        </div>
-      )}
+    <div className="app app-no-nav" data-focus={inFocus || undefined}>
+      <main className="content">{body}</main>
     </div>
   )
 }
@@ -316,7 +271,7 @@ function EmptyState({ admin, onGoManage }) {
       <h2>אין עדיין שאלות</h2>
       <p>
         {admin
-          ? 'מאגר השאלות ריק. ייבא שאלות דרך לשונית הניהול.'
+          ? 'מאגר השאלות ריק. ייבא שאלות דרך מסך הניהול.'
           : 'מאגר השאלות ריק כרגע. שאלות מתווספות על ידי המנהל.'}
       </p>
       {admin && (
