@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   IconCap,
-  IconPlay,
+  IconPlayLeft,
   IconSettings,
   IconLogOut,
   IconTrophy,
@@ -159,8 +159,8 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
       </div>
 
       <button className="btn btn-primary home-start" onClick={onStart}>
-        <IconPlay size={18} />
-        התחל תרגול
+        תרגול חדש
+        <IconPlayLeft size={18} />
       </button>
     </div>
   )

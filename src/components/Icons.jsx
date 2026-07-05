@@ -171,6 +171,15 @@ export function IconPlay(props) {
   )
 }
 
+// Left-pointing triangle — the "proceed" affordance in RTL.
+export function IconPlayLeft(props) {
+  return (
+    <Icon {...props}>
+      <polygon points="18 3 4 12 18 21 18 3" />
+    </Icon>
+  )
+}
+
 // "Back" in an RTL layout points right.
 export function IconChevronRight(props) {
   return (
