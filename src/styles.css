@@ -1235,6 +1235,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   font-size: 15px;
   font-weight: 700;
   text-align: center;
+  margin-bottom: 4px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
