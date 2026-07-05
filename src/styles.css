@@ -1257,7 +1257,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 /* Stepped question-count slider — real draggable range input */
 .qslider { display: flex; flex-direction: column; gap: 6px; }
-.qslider-head { display: flex; align-items: baseline; justify-content: space-between; }
+.qslider-head { display: flex; align-items: center; justify-content: space-between; }
 .qslider-count {
   font-size: 20px;
   font-weight: 800;

@@ -4,7 +4,7 @@ import { courseLabel, difficultyLabel } from '../data/labels.js'
 import {
   IconChevronDown,
   IconChevronRight,
-  IconPlay,
+  IconPlayLeft,
   IconCheck,
   IconX,
   IconInbox,
@@ -17,9 +17,9 @@ const BASE_STEPS = [10, 20, 30, 40, 50]
 // The three answer-state buckets, each with an icon. No "all" chip: selection
 // is an explicit set of these three. All chips share the primary accent tone.
 const STATE_OPTIONS = [
-  { value: 'unanswered', label: 'לא נענו', Icon: IconInbox },
-  { value: 'incorrect', label: 'נענו שגוי', Icon: IconX },
-  { value: 'correct', label: 'נענו נכון', Icon: IconCheck },
+  { value: 'unanswered', label: 'לא ענית', Icon: IconInbox },
+  { value: 'incorrect', label: 'טעית', Icon: IconX },
+  { value: 'correct', label: 'צדקת', Icon: IconCheck },
 ]
 
 const SUBFILTER_MODES = [
@@ -352,8 +352,8 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
             className="btn btn-primary btn-start"
             onClick={() => onStart({ ...config, count: value })}
           >
-            <IconPlay size={17} />
             התחל תרגול ({value})
+            <IconPlayLeft size={17} />
           </button>
         </div>
       )}
