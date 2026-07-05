@@ -1191,12 +1191,65 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .home-greeting { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; }
 .home-sub { margin: 5px 0 0; color: var(--muted); font-size: 15px; }
 
-.home-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+/* Per-course donut cards — horizontally scrollable, bleeding to screen edges */
+.course-cards {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  margin-inline: -20px;
+  padding: 2px 20px 12px;
   margin-bottom: 14px;
+  scrollbar-width: none;
 }
+.course-cards::-webkit-scrollbar { display: none; }
+.course-card {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  width: 176px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  animation: fadeUp var(--dur-2) var(--ease-out) both;
+}
+.course-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.donut { position: relative; width: 116px; height: 116px; }
+.donut svg { width: 100%; height: 100%; }
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.donut-total { font-size: 24px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.donut-cap { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+
+.course-legend { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 7px; }
+.course-legend li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.legend-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 3px; }
+.dot-ok { background: var(--ok); }
+.dot-bad { background: var(--bad); }
+.dot-none { background: #7b818f; }
+.legend-name { color: var(--text-2); }
+.legend-value { margin-inline-start: auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
 .leaderboard-stub { display: flex; align-items: center; gap: 12px; }
 .lb-stub-icon {
@@ -1389,6 +1442,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 @media (max-width: 480px) {
   .app { padding-inline: 16px; }
+  .course-cards { margin-inline: -16px; padding-inline: 16px; }
   .stats-summary { grid-template-columns: repeat(2, 1fr); }
   .breakdown-row { grid-template-columns: 92px 1fr; }
   .nav-item { width: 88px; }
