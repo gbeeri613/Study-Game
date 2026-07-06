@@ -1382,8 +1382,8 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
           mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
 }
+/* CSS-driven auto-scroll (no hover-pause, so a tap never freezes it). */
 .lb-track { display: flex; width: max-content; direction: rtl; animation: lb-scroll 44s linear infinite; }
-.lb-marquee:hover .lb-track { animation-play-state: paused; }
 .lb-run { display: flex; align-items: center; }
 
 .lb-seg { display: flex; align-items: center; }
@@ -1458,7 +1458,6 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 @media (prefers-reduced-motion: reduce) {
   .lb-track { animation: none; }
-  .lb-marquee { overflow-x: auto; }
   .lb-run + .lb-run { display: none; }
 }
 
