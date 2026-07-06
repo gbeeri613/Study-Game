@@ -7,6 +7,7 @@ import {
   displayToOriginal,
 } from '../lib/session.js'
 import { courseLabel } from '../data/labels.js'
+import { sessionPoints } from '../lib/points.js'
 import { IconX, IconCheck, IconChevronLeft } from './Icons.jsx'
 
 // Hebrew letter prefixes for options (א, ב, ג, ...)
@@ -81,6 +82,7 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
       bestRun,
       turnarounds,
       mistakeIds,
+      pointsEarned: sessionPoints(outcomes),
       elapsedMs: Date.now() - startRef.current,
       completed: answered >= session.length,
       config,

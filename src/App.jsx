@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
-import { fetchRemoteDb, recordAnswer, resetAnswers } from './lib/api.js'
+import { fetchRemoteDb, recordAnswer, resetAnswers, upsertProfile } from './lib/api.js'
 import { distinctValues } from './lib/session.js'
 import { useAuth, isAdmin } from './lib/useAuth.js'
 import Home from './components/Home.jsx'
@@ -130,6 +130,12 @@ function StudyApp({ user }) {
   useEffect(() => {
     if (status === 'ready') saveDb(db)
   }, [db, status])
+
+  // Mirror the user's Google name/avatar into `profiles` so they show up on the
+  // leaderboard. Fire-and-forget; failure just means a stale display name.
+  useEffect(() => {
+    upsertProfile(user).catch((err) => console.error('Failed to save profile:', err))
+  }, [user])
 
   // Dispatch that also persists answer-state changes to Supabase (optimistic).
   const persistDispatch = useCallback(

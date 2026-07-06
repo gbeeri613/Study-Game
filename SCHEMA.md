@@ -1,11 +1,23 @@
 # Data Schema — the contract
 
-The app is backed by **Supabase (Postgres)**. There are two tables:
+The app is backed by **Supabase (Postgres)**. There are three tables:
 
 - **`questions`** — the shared question store. Everyone signed in can read it;
   only the admin can write it. This holds the question **content** only.
 - **`user_answers`** — per-user answer state, one row per (user, question).
   Each user reads/writes only their own rows (enforced by Row Level Security).
+- **`profiles`** — per-user display identity (Google `name` + `avatar_url`) for
+  the leaderboard. Everyone signed in can read it (to render the board); each
+  user writes only their own row (the app upserts it on sign-in). Added in
+  migration `0004_gamification.sql`.
+
+**Points & leaderboard (gamification).** Points are a *pure function of answer
+state*: each answered question is worth `10` when correct and `3` when incorrect
+(see `answer_points()` in migration `0004`, mirrored in `src/lib/points.js`). A
+user's total is just the sum over their `user_answers` rows — so existing
+answers count with no backfill, and it can't be farmed (one row per question).
+The `leaderboard(period)` SQL function (`'all'` | `'daily'`, daily = today in
+Israel local time) aggregates these totals across all users for the Home board.
 
 At load time the app fetches both and **merges** them into one in-memory object
 of the shape below, so the rest of the app sees the same `question` objects it

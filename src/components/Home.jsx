@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconCap, IconArrowLeft, IconSettings, IconLogOut } from './Icons.jsx'
 import { courseLabel } from '../data/labels.js'
 import { NONE_VALUE } from '../lib/session.js'
+import { totalPoints } from '../lib/points.js'
+import { fetchLeaderboard } from '../lib/api.js'
 import { signOut } from '../lib/useAuth.js'
 
 // Segment colours: correct = green, incorrect = red, not answered = grey.
@@ -149,6 +151,133 @@ function CourseCard({ course, onStart }) {
   )
 }
 
+// Small round avatar for the leaderboard rows — Google photo, or a coloured
+// initial when there's none.
+function LbAvatar({ name, avatarUrl }) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase()
+  return (
+    <span className="lb-avatar">
+      {avatarUrl ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" /> : initial}
+    </span>
+  )
+}
+
+function firstNameOf(name) {
+  return String(name || '').trim().split(/\s+/)[0] || '—'
+}
+
+// Medal emoji for the top three of each board.
+const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' }
+
+// One entry in the marquee: a vertical stack of avatar · first name · points.
+// The top 3 get a tinted, outlined "podium" card with a medal overhanging the
+// top-right corner; everyone else is background-less, separated by gap alone.
+function LbChip({ row, isMe }) {
+  const medal = MEDALS[row.rank]
+  const cls = ['lb-chip', medal ? `lb-chip-podium lb-chip-${row.rank}` : '', isMe ? 'lb-chip-me' : '']
+    .filter(Boolean)
+    .join(' ')
+  return (
+    <div className={cls}>
+      {medal && (
+        <span className="lb-medal" aria-hidden="true">
+          {medal}
+        </span>
+      )}
+      <LbAvatar name={row.name} avatarUrl={row.avatar_url} />
+      <span className="lb-chip-name">{firstNameOf(row.name)}</span>
+      <span className="lb-chip-points">
+        {row.points}
+        <span className="lb-chip-unit"> נק׳</span>
+      </span>
+    </div>
+  )
+}
+
+// The Home leaderboard: a single horizontal auto-scrolling showcase that runs
+// the top-5 all-time followed by the top-5 today, each behind a small label.
+// Point totals are computed server-side from answer state.
+function Leaderboard({ userId, onRanks }) {
+  const [boards, setBoards] = useState(null) // { all, daily } | null (loading)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    Promise.all([fetchLeaderboard('all'), fetchLeaderboard('daily')])
+      .then(([all, daily]) => active && setBoards({ all, daily }))
+      .catch((err) => active && setError(err.message || String(err)))
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Lift the caller's all-time + daily ranks up to the hero once known.
+  useEffect(() => {
+    if (!boards) return
+    const meAll = boards.all.find((r) => r.user_id === userId)
+    const meDaily = boards.daily.find((r) => r.user_id === userId)
+    onRanks({ all: meAll ? meAll.rank : null, daily: meDaily ? meDaily.rank : null })
+  }, [boards, userId, onRanks])
+
+  const groups = useMemo(() => {
+    if (!boards) return []
+    const g = []
+    if (boards.all.length) g.push({ key: 'all', label: 'כל הזמנים', rows: boards.all.slice(0, 5) })
+    if (boards.daily.length) g.push({ key: 'daily', label: 'היום', rows: boards.daily.slice(0, 5) })
+    return g
+  }, [boards])
+
+  // The scrolling content, rendered twice back-to-back so the CSS animation can
+  // loop seamlessly (it shifts by exactly one copy). `copy` keeps React keys and
+  // aria unique between the two.
+  const renderRun = (copy) =>
+    groups.map((grp) => (
+      <div className="lb-seg" key={`${copy}-${grp.key}`}>
+        <span className={`lb-seg-label lb-seg-${grp.key}`}>{grp.label}:</span>
+        {grp.rows.map((r) => (
+          <LbChip key={`${copy}-${grp.key}-${r.user_id}`} row={r} isMe={r.user_id === userId} />
+        ))}
+      </div>
+    ))
+
+  // Nothing to show yet (loading, error, or no points anywhere) — render no dock
+  // rather than an empty bar. `.home`'s bottom padding still reserves the space.
+  if (error || !boards || groups.length === 0) return null
+
+  return (
+    <div className="lb-dock" aria-label="לוח מובילים">
+      <div className="lb-dock-inner">
+        <div className="lb-marquee">
+          <div className="lb-track">
+            <div className="lb-run">{renderRun('a')}</div>
+            <div className="lb-run" aria-hidden="true">
+              {renderRun('b')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// A hero rank card. Tinted + medal-badged (gold/silver/bronze) when the rank is
+// in the top three, matching the leaderboard podium.
+function RankStat({ label, rank }) {
+  const medal = MEDALS[rank]
+  const cls = ['home-stat', medal ? `home-stat-podium home-stat-${rank}` : ''].filter(Boolean).join(' ')
+  return (
+    <div className={cls}>
+      {medal && (
+        <span className="home-medal" aria-hidden="true">
+          {medal}
+        </span>
+      )}
+      <span className="home-stat-label">{label}</span>
+      <span className="home-stat-value">{rank != null ? `#${rank}` : '—'}</span>
+    </div>
+  )
+}
+
 export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
   // Per-course tallies of correct / incorrect / unanswered.
   const courses = useMemo(() => {
@@ -168,6 +297,10 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
   }, [db.questions])
 
   const name = firstName(user)
+  // Total points computed locally from answer state (matches the server model),
+  // so the hero number shows instantly. Ranks arrive with the leaderboard.
+  const points = useMemo(() => totalPoints(db.questions), [db.questions])
+  const [ranks, setRanks] = useState({ all: null, daily: null })
 
   return (
     <div className="home">
@@ -191,6 +324,14 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
       <section className="home-hero">
         <p className="home-greeting">{name ? `היי, ${name}` : 'היי'} 👋</p>
         <p className="home-sub">בחרו קורס והתחילו לתרגל</p>
+        <div className="home-stats">
+          <div className="home-stat">
+            <span className="home-stat-label">נקודות</span>
+            <span className="home-stat-value">{points.toLocaleString('he')}</span>
+          </div>
+          <RankStat label="דירוג יומי" rank={ranks.daily} />
+          <RankStat label="דירוג כללי" rank={ranks.all} />
+        </div>
       </section>
 
       <div className="course-grid">
@@ -199,24 +340,7 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
         ))}
       </div>
 
-      {/* Leaderboard (Phase 3) — sticky dock that the cards scroll under, with a
-          top fade so the transition is gentle. Commented out until the real
-          board is built; re-enable together with `.home` padding-bottom and
-          import IconTrophy.
-      <div className="home-lb-dock">
-        <div className="home-lb-inner">
-          <div className="card leaderboard-stub">
-            <div className="lb-stub-icon">
-              <IconTrophy size={20} />
-            </div>
-            <div className="lb-stub-text">
-              <strong>לוח מובילים</strong>
-              <span>נקודות ודירוג יגיעו בקרוב</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      */}
+      <Leaderboard userId={user.id} onRanks={setRanks} />
     </div>
   )
 }

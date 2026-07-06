@@ -1004,8 +1004,30 @@ button {
 }
 .score-pct { font-size: 32px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .summary-title { margin: 0 0 6px; font-size: 24px; font-weight: 800; }
-.summary-sub { margin: 0 0 26px; color: var(--muted); font-size: 15px; }
+.summary-sub { margin: 0 0 22px; color: var(--muted); font-size: 15px; }
 .summary-sub strong { color: var(--text); }
+
+/* Points earned — the reward beat, just under the score ring. */
+.sum-points {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  animation: fadeUp var(--dur-2) var(--ease-out) both;
+}
+.sum-points-icon { display: inline-flex; color: var(--accent-2); }
+.sum-points-value { font-size: 22px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.sum-points-unit { font-size: 13px; font-weight: 700; color: var(--accent); margin-inline-start: -3px; }
+.sum-points-break {
+  font-size: 12.5px;
+  color: var(--muted);
+  padding-inline-start: 10px;
+  margin-inline-start: 2px;
+  border-inline-start: 1px solid var(--border-strong);
+}
 .summary-card .btn { width: 100%; max-width: 280px; border-radius: var(--radius-full); }
 
 /* ---- Stats ------------------------------------------------------------------------------------ */
@@ -1181,7 +1203,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: calc(16px + env(safe-area-inset-top)) 0 12px;
+  padding: calc(8px + env(safe-area-inset-top)) 0 12px;
 }
 .home-top-actions { display: flex; align-items: center; gap: 8px; }
 .home-cog { color: var(--muted); }
@@ -1264,42 +1286,181 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 .legend-name { color: var(--text-2); }
 .legend-value { margin-inline-start: auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 
-.leaderboard-stub { display: flex; align-items: center; gap: 12px; }
-.lb-stub-icon {
-  flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 13px;
-  background: rgba(var(--accent-rgb), 0.1);
-  color: var(--accent);
+/* Clearance so the last course cards can scroll fully above the fixed
+   leaderboard dock at the bottom of the viewport. */
+.home { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+
+/* Hero stat cards — total points, daily rank, all-time rank. Vertical stack:
+   label on top, value below. */
+.home-stats { display: flex; gap: 10px; margin-top: 16px; padding-top: 8px; }
+.home-stat {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
 }
-.lb-stub-text { display: flex; flex-direction: column; gap: 1px; }
-.lb-stub-text strong { font-size: 14.5px; font-weight: 700; }
-.lb-stub-text span { font-size: 12.5px; color: var(--muted); }
+.home-stat-label { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.home-stat-value { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
-/* Scroll clearance for the fixed leaderboard dock — restore to ~150px when the
-   dock is re-enabled (Phase 3). */
-.home { padding-bottom: 8px; }
+/* Podium — tinted background + medal-coloured outline when a rank is top three,
+   with a medal emoji on the top-right corner (matching the leaderboard). */
+.home-stat-podium { border-width: 1.5px; }
+.home-stat-1 { border-color: rgba(255, 210, 74, 0.6); background: rgba(255, 210, 74, 0.1); }
+.home-stat-2 { border-color: rgba(205, 211, 224, 0.55); background: rgba(205, 211, 224, 0.08); }
+.home-stat-3 { border-color: rgba(224, 150, 90, 0.55); background: rgba(224, 150, 90, 0.09); }
+.home-medal {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 20px;
+  line-height: 1;
+  transform: rotate(12deg);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
 
-/* Sticky leaderboard dock — full-viewport-width, solid app bg that tapers to
-   transparent at the top so cards scroll under it with a gentle fade. */
-.home-lb-dock {
+/* ---- Leaderboard — fixed bottom showcase ---------------------------------- */
+
+/* A full-width bar pinned to the bottom of the viewport (not a card). Its
+   background is the app bg fading UP to transparent, so Home content scrolls
+   smoothly *under* it — the same trick the sticky practice progress header uses
+   at the top. `.home` carries a large bottom padding so the last cards clear it.
+   pointer-events pass through the transparent fade zone; only the bar is live. */
+.lb-dock {
   position: fixed;
   inset-inline: 0;
   bottom: 0;
   z-index: 20;
   pointer-events: none;
-  padding: 40px 20px calc(16px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, var(--bg) 56%, rgba(11, 13, 18, 0));
+  padding-top: 48px;
+  background: linear-gradient(to top, var(--bg) 62%, transparent);
+  animation: fadeIn var(--dur-3) var(--ease-out) both;
 }
-.home-lb-inner {
+.lb-dock-inner {
   max-width: var(--content-max);
   margin: 0 auto;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
   pointer-events: auto;
 }
-.home-lb-inner .card { margin-bottom: 0; }
+
+.lb-avatar {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.lb-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Auto-scrolling showcase — a seamless marquee of the top-5 all-time then the
+   top-5 today. Two identical runs slide as one track; the animation shifts by
+   exactly one run so the loop is seamless, with a soft fade mask at each end.
+   Item spacing lives on the items' own margins (not flex gaps) so the loop seam
+   spacing matches the in-run spacing exactly. */
+.lb-marquee {
+  overflow: hidden;
+  /* RTL flow: the oversized track anchors at the RIGHT edge and the animation
+     drifts it rightward, so each group reads right-to-left (label, 1st, 2nd, …)
+     and the strip moves in the RTL direction. */
+  direction: rtl;
+  /* Top room so the medal emoji can overhang the podium cards without clipping. */
+  padding-block: 12px 4px;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+          mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
+.lb-track { display: flex; width: max-content; direction: rtl; animation: lb-scroll 44s linear infinite; }
+.lb-marquee:hover .lb-track { animation-play-state: paused; }
+.lb-run { display: flex; align-items: center; }
+
+.lb-seg { display: flex; align-items: center; }
+.lb-seg-label {
+  flex: 0 0 auto;
+  direction: rtl;
+  /* Big lead gap before each group (start = right in RTL), small gap to its own
+     chips (end = left). */
+  margin-inline: 30px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lb-seg-all { color: var(--warn); }
+.lb-seg-daily { color: var(--accent); }
+
+/* Each entry is a compact vertical stack: avatar · first name · points. No
+   background by default — entries are told apart by the gap alone. */
+.lb-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  direction: rtl;
+  width: 78px;
+  margin-inline: 5px;
+  padding: 9px 8px 11px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+}
+.lb-chip .lb-avatar { width: 38px; height: 38px; font-size: 15px; }
+.lb-chip-name {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-chip-points { font-size: 11.5px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lb-chip-unit { font-size: 9.5px; font-weight: 600; color: var(--muted); }
+
+/* Current user — accent name + avatar ring, staying background-less. */
+.lb-chip-me .lb-chip-name { color: var(--accent); font-weight: 700; }
+.lb-chip-me .lb-avatar { box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.75); }
+
+/* Podium — tinted background + medal-coloured outline for the top three. */
+.lb-chip-1 { border-color: rgba(255, 210, 74, 0.6); background: rgba(255, 210, 74, 0.1); }
+.lb-chip-2 { border-color: rgba(205, 211, 224, 0.55); background: rgba(205, 211, 224, 0.08); }
+.lb-chip-3 { border-color: rgba(224, 150, 90, 0.55); background: rgba(224, 150, 90, 0.09); }
+
+/* Medal emoji hanging on the top-right corner of a podium card — overlapping the
+   card edge so it reads as pinned to it, not floating above. */
+.lb-medal {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 19px;
+  line-height: 1;
+  transform: rotate(12deg);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  pointer-events: none;
+}
+
+/* Rightward drift; with the RTL-anchored track, +50% (one run) loops seamlessly. */
+@keyframes lb-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-track { animation: none; }
+  .lb-marquee { overflow-x: auto; }
+  .lb-run + .lb-run { display: none; }
+}
 
 /* ---- Session setup -------------------------------------------------------------------------------- */
 
@@ -1470,7 +1631,6 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 
 @media (max-width: 480px) {
   .app { padding-inline: 16px; }
-  .home-lb-dock { padding-inline: 16px; }
   .stats-summary { grid-template-columns: repeat(2, 1fr); }
   .breakdown-row { grid-template-columns: 92px 1fr; }
   .nav-item { width: 88px; }
