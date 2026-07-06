@@ -228,8 +228,8 @@ function Leaderboard({ userId, onRanks }) {
   }, [boards])
 
   // The scrolling content, rendered twice back-to-back so the CSS animation can
-  // loop seamlessly (it shifts by exactly one copy). `copy` keeps React keys and
-  // aria unique between the two.
+  // loop seamlessly (it shifts by exactly one copy). `copy` keeps React
+  // keys/aria unique.
   const renderRun = (copy) =>
     groups.map((grp) => (
       <div className="lb-seg" key={`${copy}-${grp.key}`}>
@@ -323,7 +323,6 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
 
       <section className="home-hero">
         <p className="home-greeting">{name ? `היי, ${name}` : 'היי'} 👋</p>
-        <p className="home-sub">בחרו קורס והתחילו לתרגל</p>
         <div className="home-stats">
           <div className="home-stat">
             <span className="home-stat-label">נקודות</span>
