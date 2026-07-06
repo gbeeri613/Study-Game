@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { courseLabel } from '../data/labels.js'
-import { IconPlayLeft, IconTarget2, IconChevronRight } from './Icons.jsx'
+import { IconPlayLeft, IconTarget2, IconChevronRight, IconSparkles } from './Icons.jsx'
 
 // Grade → colour band. Drives the ring stroke and the score number colour.
 function gradeBand(grade) {
@@ -85,11 +85,13 @@ function Confetti() {
 }
 
 export default function Summary({ result, db, onHome, onAgain, onReview }) {
-  const { answered, firstTryCorrect, mistakeIds, config } = result
+  const { answered, firstTryCorrect, mistakeIds, config, pointsEarned = 0 } = result
 
   const grade = answered > 0 ? Math.round((firstTryCorrect / answered) * 100) : 0
   const band = gradeBand(grade)
   const mistakes = mistakeIds.length
+  const gainedPoints = Math.max(0, pointsEarned)
+  const wrong = answered - firstTryCorrect
 
   // Course coverage after this session (single-course sessions).
   const coverage = useMemo(() => {
@@ -115,6 +117,20 @@ export default function Summary({ result, db, onHome, onAgain, onReview }) {
         ענית נכון על <strong>{firstTryCorrect}</strong> מתוך <strong>{answered}</strong>{' '}
         {answered === 1 ? 'שאלה' : 'שאלות'} בניסיון הראשון
       </p>
+
+      {answered > 0 && (
+        <div className="sum-points">
+          <span className="sum-points-icon">
+            <IconSparkles size={18} />
+          </span>
+          <span className="sum-points-value">+{gainedPoints}</span>
+          <span className="sum-points-unit">נק׳</span>
+          <span className="sum-points-break">
+            {firstTryCorrect} נכונות
+            {wrong > 0 ? ` · ${wrong} שגויות` : ''}
+          </span>
+        </div>
+      )}
 
       {coverage && (
         <div className="sum-coverage">
