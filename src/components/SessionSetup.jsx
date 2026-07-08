@@ -105,22 +105,36 @@ function PillMultiSelect({ options, selected, onChange }) {
   )
 }
 
+// Build the slider stops for a given pool. Base steps up to 50 are enabled
+// stops; a pool larger than 50 adds a final enabled "all" stop at the pool
+// size, and a pool smaller than 50 inserts the pool as the top enabled stop
+// while the base steps above it render greyed and can't be dragged past. The
+// stop whose value equals the pool is the "all" stop (its label carries הכל).
+function buildStops(pool) {
+  const cap = Math.min(pool, 50)
+  const enabled = BASE_STEPS.filter((t) => t <= cap)
+  if (pool > 0 && !enabled.includes(pool)) enabled.push(pool) // the "all" stop
+  const disabled = BASE_STEPS.filter((t) => t > cap)
+  const ticks = [...new Set([...enabled, ...disabled])].sort((a, b) => a - b)
+  let enabledMaxIdx = 0
+  ticks.forEach((t, i) => {
+    if (t <= cap || t === pool) enabledMaxIdx = i
+  })
+  return { ticks, enabledMaxIdx }
+}
+
+// Labels for the "all" stop (value === pool): compact ticks just read הכל,
+// while the head readout keeps the number for context, e.g. "137 (הכל)".
+const tickLabel = (t, pool) => (t === pool ? 'הכל' : t)
+const headLabel = (t, pool) => (t === pool ? `הכל (${t})` : t)
+
 // Stepped question-count slider — a real draggable range input (touch + mouse +
-// keyboard) that snaps to discrete stops. Stops are BASE_STEPS up to the pool
-// size, plus the pool itself when it isn't a round step; higher steps render
-// greyed and can't be dragged past.
+// keyboard) that snaps to discrete stops. See buildStops for how the stops (and
+// the trailing "all" stop) are derived.
 function CountSlider({ pool, value, onChange }) {
   const { allTicks, enabledMaxIdx } = useMemo(() => {
-    const cap = Math.min(pool, 50)
-    const enabled = BASE_STEPS.filter((t) => t <= cap)
-    if (cap > 0 && !enabled.includes(cap)) enabled.push(cap)
-    const disabled = BASE_STEPS.filter((t) => t > cap)
-    const ticks = [...new Set([...enabled, ...disabled])].sort((a, b) => a - b)
-    let maxIdx = 0
-    ticks.forEach((t, i) => {
-      if (t <= cap) maxIdx = i
-    })
-    return { allTicks: ticks, enabledMaxIdx: maxIdx }
+    const { ticks, enabledMaxIdx } = buildStops(pool)
+    return { allTicks: ticks, enabledMaxIdx }
   }, [pool])
 
   const n = allTicks.length
@@ -142,7 +156,7 @@ function CountSlider({ pool, value, onChange }) {
     <div className="qslider">
       <div className="qslider-head">
         <span className="field-label">מספר שאלות</span>
-        <span className="qslider-count">{value}</span>
+        <span className="qslider-count">{headLabel(value, pool)}</span>
       </div>
       <div className="qslider-rail">
         <div className="qslider-line" />
@@ -168,7 +182,7 @@ function CountSlider({ pool, value, onChange }) {
               }`}
               style={{ left: pos(i) }}
             >
-              {t}
+              {tickLabel(t, pool)}
             </span>
           ))}
         </div>
@@ -199,9 +213,10 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
   const pool = useMemo(() => applyFilters(db.questions, configToFilters(config)).length, [db.questions, config])
 
   // Resolve the effective count: clamp to the pool and snap to an enabled step.
-  const maxAllowed = Math.min(pool, 50)
+  const { ticks: stops, enabledMaxIdx } = buildStops(pool)
+  const enabledTicks = stops.slice(0, enabledMaxIdx + 1)
+  const maxAllowed = enabledTicks.length ? enabledTicks[enabledTicks.length - 1] : 0
   let value = Math.min(config.count, maxAllowed)
-  const enabledTicks = [...new Set([...BASE_STEPS.filter((t) => t <= maxAllowed), maxAllowed].filter((t) => t > 0))]
   if (!enabledTicks.includes(value) && enabledTicks.length) {
     const below = enabledTicks.filter((t) => t <= value)
     value = below.length ? Math.max(...below) : Math.min(...enabledTicks)
