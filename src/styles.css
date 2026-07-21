@@ -1390,6 +1390,7 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   border-radius: var(--radius-full);
 }
 .modal-icon-danger { background: var(--bad-bg); color: var(--bad); }
+.modal-icon-accent { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
 .modal h3 { margin: 0 0 8px; font-size: 18px; }
 .modal .muted { font-size: 14px; }
 .modal-actions {
@@ -1398,6 +1399,79 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
   margin-top: 20px;
 }
 .modal-actions .btn { flex: 1; }
+
+/* Tag onboarding — the one-time interactive demo on Home. The card in the
+   middle is a shrunken but REAL question card (same meta row, same TagBar),
+   so the demo teaches exactly the control practice ships. */
+.modal-onboarding {
+  width: min(92vw, 460px);
+  text-align: start;
+}
+.modal-onboarding h3 { text-align: center; }
+
+.onboard-intro {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.onboard-prompt {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--accent);
+}
+
+.onboard-demo {
+  padding: 14px 14px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.onboard-demo .question-meta { margin-bottom: 8px; }
+.onboard-demo-q {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+/* The demo's options are display-only: smaller, and inert except for the tag
+   icons above them. */
+.onboard-demo .options { gap: 7px; }
+.onboard-demo .option {
+  min-height: 0;
+  padding: 8px 11px;
+  font-size: 13px;
+  pointer-events: none;
+}
+.onboard-demo .option-letter {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+
+/* Reserves its line while blank so the reinforcement text doesn't reflow the
+   buttons when it appears. */
+.onboard-tip {
+  min-height: 2.9em;
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.onboard-tip-on {
+  color: var(--ok);
+  animation: fadeIn var(--dur-2) var(--ease-out) both;
+}
+
+.onboard-finish { padding: 22px 0 14px; text-align: center; }
+.onboard-finish-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
 
 /* ---- Home hub ------------------------------------------------------------------------------------ */
 

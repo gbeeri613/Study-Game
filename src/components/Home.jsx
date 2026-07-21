@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IconCap, IconArrowLeft, IconSettings, IconLogOut } from './Icons.jsx'
+import { IconCap, IconArrowLeft, IconSettings, IconLogOut, IconStar } from './Icons.jsx'
+import OnboardingModal from './OnboardingModal.jsx'
 import { courseLabel } from '../data/labels.js'
 import { NONE_VALUE, activeQuestions } from '../lib/session.js'
 import { grandTotal } from '../lib/points.js'
@@ -17,7 +18,7 @@ function courseName(slug) {
   return slug === NONE_VALUE ? 'ללא קורס' : courseLabel(slug)
 }
 
-function AccountMenu({ user }) {
+function AccountMenu({ user, onOpenOnboarding }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -51,6 +52,16 @@ function AccountMenu({ user }) {
             <span className="account-name">{name}</span>
             <span className="account-email">{email}</span>
           </div>
+          <button
+            className="menu-item"
+            onClick={() => {
+              setOpen(false)
+              onOpenOnboarding()
+            }}
+          >
+            <IconStar size={16} />
+            איך מתייגים שאלות?
+          </button>
           <button className="menu-item" onClick={() => signOut()}>
             <IconLogOut size={16} />
             התנתקות
@@ -278,7 +289,7 @@ function RankStat({ label, rank }) {
   )
 }
 
-export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
+export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }) {
   // Per-course tallies of correct / incorrect / unanswered. Hidden questions
   // are excluded so the counts match what a session can actually serve up
   // (only the admin ever receives hidden rows in the first place).
@@ -305,6 +316,15 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
   const points = useMemo(() => grandTotal(db), [db])
   const [ranks, setRanks] = useState({ all: null, daily: null })
 
+  // Tag onboarding. `firstTime` is snapshotted when the modal opens (not read
+  // live from db) so completing — which sets onboarded_at — doesn't flip the
+  // modal to its read-only variant mid-affirmation. Auto-open only while the
+  // profile has never seen it; the account menu can re-open it read-only.
+  const [onboarding, setOnboarding] = useState(() =>
+    db.onboarded_at == null ? { firstTime: true } : null,
+  )
+  const closeOnboarding = () => setOnboarding(null)
+
   return (
     <div className="home">
       <header className="home-top">
@@ -315,7 +335,12 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
           <h1 className="app-title">תרגול חץ 26׳</h1>
         </div>
         <div className="home-top-actions">
-          <AccountMenu user={user} />
+          <AccountMenu
+            user={user}
+            onOpenOnboarding={() =>
+              setOnboarding({ firstTime: db.onboarded_at == null })
+            }
+          />
           {admin && (
             <button className="btn-icon home-cog" aria-label="ניהול" onClick={onOpenAdmin}>
               <IconSettings size={20} />
@@ -343,6 +368,18 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
       </div>
 
       <Leaderboard userId={user.id} onRanks={setRanks} />
+
+      {onboarding && (
+        <OnboardingModal
+          firstTime={onboarding.firstTime}
+          onComplete={() => dispatch({ type: 'ONBOARDING_DONE' })}
+          onSkip={() => {
+            dispatch({ type: 'ONBOARDING_SKIP' })
+            closeOnboarding()
+          }}
+          onClose={closeOnboarding}
+        />
+      )}
     </div>
   )
 }

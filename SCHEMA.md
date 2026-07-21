@@ -1,23 +1,67 @@
 # Data Schema — the contract
 
-The app is backed by **Supabase (Postgres)**. There are three tables:
+The app is backed by **Supabase (Postgres)**. There are five tables:
 
 - **`questions`** — the shared question store. Everyone signed in can read it;
-  only the admin can write it. This holds the question **content** only.
+  only the admin can write it. This holds the question **content**, plus the
+  shared moderation columns added in `0005_question_feedback.sql`:
+  `wrong_count`, `quality_count`, `hidden`, `hidden_at` (see
+  [Question feedback & moderation](#question-feedback--moderation) below).
 - **`user_answers`** — per-user answer state, one row per (user, question).
   Each user reads/writes only their own rows (enforced by Row Level Security).
 - **`profiles`** — per-user display identity (Google `name` + `avatar_url`) for
-  the leaderboard. Everyone signed in can read it (to render the board); each
-  user writes only their own row (the app upserts it on sign-in). Added in
-  migration `0004_gamification.sql`.
+  the leaderboard, added in migration `0004_gamification.sql`, plus
+  `onboarded_at` (`0005`) — when the user completed *or* dismissed the one-time
+  tagging intro (`null` = never seen it; the Home modal keys off this).
+- **`question_feedback`** — one tag per (user, question): `'wrong'` or
+  `'quality'`. Each user reads/writes only their own rows; nobody ever sees
+  anyone else's tags, only the aggregate counters on `questions`.
+- **`rewards`** — an **append-only point ledger** written exclusively by the
+  database (a trigger and the onboarding RPC — clients have **no write policy
+  at all**). Rows are `kind='tag'` (+2, at most one per question, enforced by a
+  partial unique index) or `kind='onboarding'` (+10, at most one ever). Users
+  read only their own rows.
 
-**Points & leaderboard (gamification).** Points are a *pure function of answer
-state*: each answered question is worth `10` when correct and `3` when incorrect
-(see `answer_points()` in migration `0004`, mirrored in `src/lib/points.js`). A
-user's total is just the sum over their `user_answers` rows — so existing
-answers count with no backfill, and it can't be farmed (one row per question).
+**Points & leaderboard (gamification).** A user's total is
+**answer points + reward points** (`grandTotal()` in `src/lib/points.js`):
+
+- *Answer points* are a pure function of answer state — `10` per correct,
+  `3` per incorrect (`answer_points()` in migration `0004`). Existing answers
+  count with no backfill, and they can't be farmed (one row per question).
+- *Reward points* come from the `rewards` ledger: `+2` the first time you tag a
+  question (ever — switching or re-tagging pays nothing) and `+10` for
+  completing the tagging onboarding once. Granted server-side; the client only
+  mirrors them optimistically.
+
 The `leaderboard(period)` SQL function (`'all'` | `'daily'`, daily = today in
-Israel local time) aggregates these totals across all users for the Home board.
+Israel local time) aggregates both parts across all users for the Home board; a
+reward counts toward the daily board on the day it was created.
+
+## Question feedback & moderation
+
+Signed-in users can tag any question they've answered as **שגויה** (`wrong` —
+factually incorrect) or **איכותית** (`quality`), one tag per (user, question).
+A recount trigger on `question_feedback` maintains the denormalized
+`wrong_count` / `quality_count` on `questions` and applies the rules:
+
+- **Auto-hide:** a question reaching `wrong_count >= 3` (`WRONG_THRESHOLD`) is
+  hidden — it stops being served to everyone. A `wrong` tag **from the admin**
+  hides it immediately. Hiding is **sticky**: retracting a report never
+  un-hides; only the admin can restore.
+- **Hidden visibility:** the `questions` read policy serves hidden rows to the
+  admin only (`(NOT hidden) OR is_admin()`). The client additionally filters
+  `!q.hidden` everywhere except the admin's moderation list.
+- **Self-reported:** a question you yourself tagged `wrong` is no longer served
+  *to you* (client-side rule), even while it stays visible to everyone else.
+- **High-quality pool:** `quality_count >= 2` (`QUALITY_THRESHOLD`) marks a
+  question community-endorsed; the session setup's `רק שאלות איכותיות` toggle
+  filters to these.
+- **Admin restore:** the `admin_restore_question(qid)` RPC un-hides a question
+  and deletes the `wrong` tags against it (so it doesn't immediately re-hide).
+  Deleting a question cascades its feedback and tag rewards away.
+
+Thresholds and reward values live in `src/lib/points.js` and MUST match the
+literals in `supabase/migrations/0005_question_feedback.sql`.
 
 At load time the app fetches both and **merges** them into one in-memory object
 of the shape below, so the rest of the app sees the same `question` objects it
@@ -91,11 +135,18 @@ user has their own independent answer state over the same shared questions.
 | `answered_at` | string (ISO) or `null` | `null` = never answered (no row for this user/question). Doubles as the answered/unanswered flag. |
 | `last_choice` | number or `null` | 0-based index the user last picked (in **original** option order, even if display was shuffled). |
 | `correct` | boolean or `null` | Whether the last answer was correct. |
+| `my_tag` | `'wrong'` \| `'quality'` \| `null` | This user's own tag (from `question_feedback`). Never anyone else's. |
+| `tag_rewarded` | boolean | Whether this question already paid its one-time +2 tag reward (derived from `rewards`); drives the optimistic point bump. |
+
+The app also merges the **shared** moderation columns (`hidden`, `wrong_count`,
+`quality_count`) onto each question, and carries two user-level fields on the db
+object itself: `rewards_total` (sum of the user's `rewards` rows) and
+`onboarded_at`.
 
 Answering a question upserts the user's row; resetting deletes it. Writes are
 optimistic (local state updates immediately, the DB write happens in the
-background). These fields must **not** appear in the `questions` table — they
-are stripped on import.
+background). None of these state fields appear in the `questions` content
+columns — they are stripped on import.
 
 ## Import behavior
 

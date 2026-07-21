@@ -366,6 +366,7 @@ function StudyApp({ user }) {
         db={db}
         user={user}
         admin={admin}
+        dispatch={persistDispatch}
         onStart={openSetup}
         onOpenAdmin={() => navigate('admin')}
       />
