@@ -1,7 +1,28 @@
 // Pure helpers for building a practice session: filtering, ordering, and
 // per-question option shuffling with a correct index mapping.
 
+import { QUALITY_THRESHOLD } from './points.js'
+
 // ---- Filtering -------------------------------------------------------------
+
+// Questions that are actually in play for THIS user. Two separate exclusions:
+//
+//   1. Hidden — auto-hidden once enough users reported it. Non-admins never
+//      receive these at all, but the ADMIN does (to moderate), so they must be
+//      filtered out of practice, tallies and setup counts explicitly.
+//
+//   2. Reported by this user — if you've said a question is wrong, you
+//      shouldn't have to keep answering it while it waits on a quorum. Your own
+//      report suppresses it for you immediately, long before WRONG_THRESHOLD is
+//      reached. Retracting the tag brings it straight back.
+//
+// Only 'wrong' suppresses; a 'quality' tag obviously keeps the question in play.
+//
+// The full db.questions list is deliberately left intact rather than pruned at
+// fetch time, so an admin's JSON export stays a complete backup.
+export function activeQuestions(questions) {
+  return questions.filter((q) => !q.hidden && q.my_tag !== 'wrong')
+}
 
 // Missing filter-axis values are bucketed under this sentinel in the UI.
 export const NONE_VALUE = '__none__'
@@ -17,9 +38,17 @@ function axisValue(q, axis) {
 //   difficulty -> string[]   (multi-select; empty = all)
 //   state      -> string[]   (multi-select of buckets: 'unanswered' |
 //                             'correct' | 'incorrect'; empty = all)
+//   highQualityOnly -> boolean  (keep only community-endorsed questions)
 // }
+// Hidden questions are dropped unconditionally — see activeQuestions().
 export function applyFilters(questions, filters = {}) {
-  return questions.filter((q) => {
+  return activeQuestions(questions).filter((q) => {
+    // High quality: a community signal, not the user's own tag. A question
+    // qualifies once enough distinct users have marked it as such.
+    if (filters.highQualityOnly && (q.quality_count ?? 0) < QUALITY_THRESHOLD) {
+      return false
+    }
+
     // Single-value axes.
     for (const axis of ['unit', 'topic']) {
       const want = filters[axis]
@@ -61,6 +90,7 @@ export function configToFilters(config) {
     course: config.course ? [config.course] : [],
     difficulty: config.difficulty || [],
     state: config.state || [],
+    highQualityOnly: !!config.highQualityOnly,
   }
   if (config.filterBy === 'unit') filters.unit = config.unit
   else if (config.filterBy === 'topic') filters.topic = config.topic

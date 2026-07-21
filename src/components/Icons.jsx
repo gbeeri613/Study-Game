@@ -153,6 +153,28 @@ export function IconSparkles(props) {
   )
 }
 
+// Reporting a factually wrong question. A page with an X reads as "this
+// content is broken" — a warning triangle reads as "careful", which users
+// mistake for "this question is hard".
+export function IconFileX(props) {
+  return (
+    <Icon {...props}>
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="m9.5 12.5 5 5" />
+      <path d="m14.5 12.5-5 5" />
+    </Icon>
+  )
+}
+
+export function IconStar(props) {
+  return (
+    <Icon {...props}>
+      <path d="M11.5 3.4a.6.6 0 0 1 1 0l2.2 4.5a.6.6 0 0 0 .5.3l5 .7a.6.6 0 0 1 .3 1l-3.6 3.5a.6.6 0 0 0-.2.6l.9 4.9a.6.6 0 0 1-.9.6l-4.4-2.3a.6.6 0 0 0-.6 0l-4.4 2.3a.6.6 0 0 1-.9-.6l.9-4.9a.6.6 0 0 0-.2-.6L3.5 9.9a.6.6 0 0 1 .3-1l5-.7a.6.6 0 0 0 .5-.3Z" />
+    </Icon>
+  )
+}
+
 export function IconAlert(props) {
   return (
     <Icon {...props}>

@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { loadDb, saveDb, emptyDb } from './lib/storage.js'
-import { fetchRemoteDb, recordAnswer, resetAnswers, upsertProfile } from './lib/api.js'
+import {
+  fetchRemoteDb,
+  recordAnswer,
+  resetAnswers,
+  upsertProfile,
+  setTag,
+  clearTag,
+  claimOnboarding,
+  dismissOnboarding,
+} from './lib/api.js'
 import { distinctValues } from './lib/session.js'
+import { TAG_REWARD, ONBOARDING_REWARD } from './lib/points.js'
 import { useAuth, isAdmin } from './lib/useAuth.js'
 import Home from './components/Home.jsx'
 import SessionSetup from './components/SessionSetup.jsx'
@@ -35,6 +45,39 @@ function dbReducer(db, action) {
       return { ...db, questions }
     }
 
+    case 'TAG_QUESTION': {
+      // action: { id, tag ('wrong' | 'quality') }
+      // The reward is granted server-side by a trigger, once per (user,
+      // question) ever. Mirror that here so the total moves immediately — but
+      // only on the FIRST tag, so switching tags doesn't animate points that
+      // the server won't actually grant.
+      let earned = 0
+      const questions = db.questions.map((q) => {
+        if (q.id !== action.id) return q
+        if (!q.tag_rewarded) earned = TAG_REWARD
+        return { ...q, my_tag: action.tag, tag_rewarded: true }
+      })
+      return { ...db, questions, rewards_total: (db.rewards_total ?? 0) + earned }
+    }
+
+    case 'CLEAR_TAG': {
+      // Retracting a tag never claws back the reward — matching the server.
+      const questions = db.questions.map((q) =>
+        q.id === action.id ? { ...q, my_tag: null } : q,
+      )
+      return { ...db, questions }
+    }
+
+    case 'ONBOARDING_DONE':
+      return {
+        ...db,
+        onboarded_at: db.onboarded_at ?? new Date().toISOString(),
+        rewards_total: (db.rewards_total ?? 0) + (db.onboarded_at ? 0 : ONBOARDING_REWARD),
+      }
+
+    case 'ONBOARDING_SKIP':
+      return { ...db, onboarded_at: db.onboarded_at ?? new Date().toISOString() }
+
     case 'RESET_STATE': {
       // clear all answer-state (keeps content). action.ids optional subset.
       const idSet = action.ids ? new Set(action.ids) : null
@@ -59,6 +102,7 @@ const DEFAULT_CONFIG = {
   unit: 'all',
   topic: 'all',
   difficulty: [], // advanced multi-select; empty = all
+  highQualityOnly: false, // keep only questions the community marked as good
 }
 
 // ---- history-backed navigation ---------------------------------------------
@@ -148,6 +192,22 @@ function StudyApp({ user }) {
       } else if (action.type === 'RESET_STATE') {
         resetAnswers(user.id, action.ids).catch((err) =>
           console.error('Failed to reset answers:', err),
+        )
+      } else if (action.type === 'TAG_QUESTION') {
+        setTag(user.id, action.id, action.tag).catch((err) =>
+          console.error('Failed to save tag:', err),
+        )
+      } else if (action.type === 'CLEAR_TAG') {
+        clearTag(user.id, action.id).catch((err) =>
+          console.error('Failed to clear tag:', err),
+        )
+      } else if (action.type === 'ONBOARDING_DONE') {
+        claimOnboarding().catch((err) =>
+          console.error('Failed to claim onboarding reward:', err),
+        )
+      } else if (action.type === 'ONBOARDING_SKIP') {
+        dismissOnboarding().catch((err) =>
+          console.error('Failed to dismiss onboarding:', err),
         )
       }
     },

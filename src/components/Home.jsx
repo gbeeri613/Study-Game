@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconCap, IconArrowLeft, IconSettings, IconLogOut } from './Icons.jsx'
 import { courseLabel } from '../data/labels.js'
-import { NONE_VALUE } from '../lib/session.js'
-import { totalPoints } from '../lib/points.js'
+import { NONE_VALUE, activeQuestions } from '../lib/session.js'
+import { grandTotal } from '../lib/points.js'
 import { fetchLeaderboard } from '../lib/api.js'
 import { signOut } from '../lib/useAuth.js'
 
@@ -279,10 +279,12 @@ function RankStat({ label, rank }) {
 }
 
 export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
-  // Per-course tallies of correct / incorrect / unanswered.
+  // Per-course tallies of correct / incorrect / unanswered. Hidden questions
+  // are excluded so the counts match what a session can actually serve up
+  // (only the admin ever receives hidden rows in the first place).
   const courses = useMemo(() => {
     const map = new Map()
-    for (const q of db.questions) {
+    for (const q of activeQuestions(db.questions)) {
       const slug = q.course == null || q.course === '' ? NONE_VALUE : q.course
       if (!map.has(slug)) map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0 })
       const row = map.get(slug)
@@ -297,9 +299,10 @@ export default function Home({ db, user, admin, onStart, onOpenAdmin }) {
   }, [db.questions])
 
   const name = firstName(user)
-  // Total points computed locally from answer state (matches the server model),
-  // so the hero number shows instantly. Ranks arrive with the leaderboard.
-  const points = useMemo(() => totalPoints(db.questions), [db.questions])
+  // Total points computed locally — answer state plus the rewards ledger, the
+  // same sum leaderboard() does server-side — so the hero number shows instantly
+  // and moves the moment a tag is placed. Ranks arrive with the leaderboard.
+  const points = useMemo(() => grandTotal(db), [db])
   const [ranks, setRanks] = useState({ all: null, daily: null })
 
   return (

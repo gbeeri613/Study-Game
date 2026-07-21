@@ -453,52 +453,80 @@ Any change to `WRONG_THRESHOLD` or the reward values **must** be made in both
 
 ### 7.1 Tagging during practice (`Practice.jsx`)
 
-**When it appears (Q4):** the tag bar renders as soon as the first attempt is
+**When it appears (Q4):** the tag icons render as soon as the first attempt is
 recorded (`attempted === true`) — independent of whether the pick was correct
 (the runner never reveals the answer on a wrong pick, and a "wrong" tag is often
 exactly the reaction to a confident pick being marked wrong). It stays visible
 until the user advances. Available in every context a question is answered,
 including mistakes-review and re-answers (Q5).
 
-**Layout:** a compact bar below the options / explanation area:
+**Layout (AS BUILT, 2026-07-21 — supersedes the original "compact bar below the
+options" design):** two small icons tucked into the question card's **meta row**,
+pushed to the far end so they sit inline with the course / answered-state chips.
+No standing bar; the affordance is nearly invisible until wanted, which matches
+the "tag outliers, not everything" principle better than the original bar did.
 
 ```
-  ┌───────────────────────────────────────────────────────────┐
-  │  עזרו לשפר את המאגר · כל תיוג = +2 נק׳ (פעם אחת לשאלה)      │
-  │                                                             │
-  │   [ ⚑ שגויה ]              [ ★ שאלה איכותית ]               │
-  │   התשובה/השאלה שגויה         ברורה, הוגנת ומלמדת            │
-  │   עובדתית — לא סתם קשה                                      │
-  └───────────────────────────────────────────────────────────┘
+  ┌── question card ──────────────────────────────────────────┐
+  │  [☆] [🗎✗]                    [נענתה שגוי] [סוציולוגיה]     │
+  │                                                            │
+  │             ?שאלת התרגול — מהו המושג המתאים                 │
+  │  ...                                                       │
+  └────────────────────────────────────────────────────────────┘
+       ↓ tapping an icon opens a confirm popover beneath it
+     ┌────────────────────────────┐
+     │ דיווח על שאלה שגויה         │
+     │ <explanation paragraph>     │
+     │ [    דווח כשגויה    ]       │
+     └────────────────────────────┘
 ```
 
-- The two buttons are **mutually exclusive**. Tapping one selects it; tapping
-  the selected one again clears it; tapping the other switches.
-- If the user already tagged this question before, that tag shows **selected**
-  on arrival (Q14 — own tag visible, never others').
-- **On first-ever tag of a question:** show the thank-you affirmation and
-  optimistically add +2 to the local point total. Subsequent changes/clears on
-  the same question show a lighter acknowledgement and change **no** points.
+- **Icons:** `IconFileX` (a page with an X) for wrong, `IconStar` for quality.
+  Both were added to `Icons.jsx` for this feature. A warning triangle was tried
+  first and rejected: it reads as "careful", which is exactly the wrong nudge
+  for a question that is merely hard.
+- **Asymmetric interaction — this is deliberate:**
+  - **Tagging takes two steps.** Tap the icon → popover with title, explanation
+    and a single confirm button → tap confirm. The second step is the guardrail
+    against reflex-reporting a hard question as wrong.
+  - **Untagging takes one step.** Tapping a lit icon clears the tag immediately,
+    no popover. Retraction is harmless, so it is cheap on purpose.
+- The two tags remain **mutually exclusive** (enforced structurally by the PK).
+- A tag you hold keeps its icon coloured (red for wrong, amber for quality), so
+  your own tag is visible at a glance on return (Q14 — own tag, never others').
+  In practice this is only reachable for `quality`: a question you tagged
+  `wrong` is no longer served to you at all (see §9, "Self-reported questions").
+- **On first-ever tag of a question:** the popover swaps to a thank-you with
+  `+2 נק׳` and auto-closes after ~1.8s; the local point total bumps
+  optimistically. Re-tagging an already-rewarded question shows the same
+  thank-you **without** the points line and changes no total.
+- Popover dismisses on outside click or Escape, and is anchored to the inline
+  **end** — anchoring to the start runs it off the screen edge in RTL, since
+  the icons sit at the far edge of the row.
 
-**Thank-you affirmation (first tag only):** a brief inline toast/pill:
-
-> `תודה! הדיווח שלך משפר את המאגר לכל הלומדים 🙌  +2 נק׳`
-
-**Microcopy (draft — Hebrew, edit freely):**
+**Microcopy (AS BUILT — approved by the owner 2026-07-21):**
 
 | Element | Copy |
 |---|---|
-| Bar heading | `עזרו לשפר את המאגר` |
-| Reward note | `כל תיוג מזכה ב-2 נק׳ (פעם אחת לכל שאלה)` |
-| Wrong button | `שגויה` |
-| Wrong helper | `התשובה או השאלה שגויות עובדתית — לא בגלל שהיא קשה או שלא אהבתם אותה.` |
-| Quality button | `שאלה איכותית` |
-| Quality helper | `ברורה, הוגנת ומלמדת — שאלה טובה ששווה לתרגל.` |
-| Thank-you (first tag) | `תודה! הדיווח שלך משפר את המאגר לכל הלומדים 🙌  +2 נק׳` |
-| Ack (change/clear) | `עודכן.` |
+| Wrong — icon aria-label | `דיווח על שאלה שגויה` |
+| Wrong — popover title | `דיווח על שאלה שגויה` |
+| Wrong — popover body | `יתכן וישנם שאלות שגויות. אם אתם בטוחים שהשאלה שגוייה, נא דווחו עליה. שאלה שדווחה כשגוייה ע״י {WRONG_THRESHOLD} סטודנטים תוסר מהמערכת.` |
+| Wrong — confirm button | `דווח כשגויה` |
+| Quality — icon aria-label | `סימון שאלה איכותית` |
+| Quality — popover title | `סמן כשאלה איכותית` |
+| Quality — popover body | `חושבים שהשאלה טובה מהממוצע? סמנו אותה כאיכותית והיא תצורף למאגר השאלות האיכותיות. אם תרצו, תוכלו לבחור לתרגל רק שאלות איכותיות בתרגולים הבאים.` |
+| Quality — confirm button | `סמן כאיכותית` |
+| Thank-you | `תודה! התיוג שלכם משפר את המאגר 🙌` (+ `+2 נק׳` on first tag only) |
 
-The **"wrong ≠ hard / disliked"** distinction in the helper text is the key
-guardrail against over-tagging — keep it explicit.
+The threshold in the wrong-report copy is **interpolated from
+`WRONG_THRESHOLD`**, not typed as a literal, so the sentence can never drift
+from the constant (or from its mirror in the SQL trigger).
+
+> **Known copy gap, deliberately left open:** the popover says a question is
+> removed after `WRONG_THRESHOLD` reports, but the reporter sees it disappear
+> from their own pool after *their* report (§9). Some users may read that as
+> "my single report deleted it". A line like `לא נציג לכם אותה שוב` would close
+> the gap if it proves confusing.
 
 ### 7.2 High-quality filter (`SessionSetup.jsx`)
 
@@ -523,11 +551,12 @@ the interactive demo's tag buttons are obviously operating on a **mock sample
 question inside the modal**, and the user never worries it will tag the real
 question they just answered.
 
-**Content:** an interactive mini-demo that mirrors the real tag bar:
+**Content:** an interactive mini-demo that mirrors the real tag control (icons +
+confirm popover, §7.1):
 1. Intro line: what tagging is for ("help improve the bank; tag the rare
    outliers, not every question").
 2. A **mock** sample question with options already "answered", showing the real
-   tag bar. Prompt: `נסו לתייג את השאלה הזו`.
+   tag icons. Prompt: `נסו לתייג את השאלה הזו`.
 3. On the user tapping either tag (a **mock action — no DB writes, no real
    feedback rows**): confirm `מעולה! ככה מדווחים.` and reveal the meanings of
    both tags (reinforce "wrong ≠ hard").
@@ -630,15 +659,22 @@ others.
 - Ensure hidden questions are excluded from session building (either here or at
   the App layer per §8.4 — pick one place and be consistent).
 
-### 8.6 `src/components/Practice.jsx`
-- Render the tag bar (new `TagBar.jsx`) once `attempted`.
-- Wire taps to `dispatch({ type: 'TAG_QUESTION' | 'CLEAR_TAG', ... })`.
-- Show the first-tag thank-you affirmation (local state; only when the reward was
-  actually granted).
+### 8.6 `src/components/Practice.jsx` — DONE
+- Render `<TagBar>` **inside `.question-meta`** (not below the card) once
+  `attempted`.
+- Wire to `dispatch({ type: 'TAG_QUESTION' | 'CLEAR_TAG', ... })` via a single
+  `handleTag(next)` where `next` is a tag value or `null` to retract.
+- The thank-you lives in `TagBar`, not here — Practice holds no tag UI state.
+- `activeQuestions()` is applied to the mistakes-review (`overrideQuestionIds`)
+  pool too, so a question hidden or self-reported between sessions can't be
+  served for review.
 
-### 8.7 `src/components/TagBar.jsx` (new)
-Presentational: the two mutually-exclusive buttons + helper microcopy + reward
-note, receiving `myTag` and `onSet(tag)/onClear()`.
+### 8.7 `src/components/TagBar.jsx` (new) — DONE
+Owns the icon buttons **and** the confirm-popover interaction (open state,
+outside-click/Escape dismissal, the auto-closing thank-you). Props are
+`{ myTag, tagRewarded, onChange }` — `onChange(tag | null)`. It needs
+`tagRewarded` to decide whether to show `+2 נק׳`, since only the first-ever tag
+of a question pays out. See §7.1 for the interaction rules and copy.
 
 ### 8.8 `src/components/SessionSetup.jsx`
 - Add the `רק שאלות איכותיות` toggle bound to `config.highQualityOnly`
@@ -659,24 +695,54 @@ DB writes for the demo tap; Complete → `claimOnboarding()`; Skip →
 Add the "Reported questions" moderation card (§7.4) with Restore/Delete.
 
 ### 8.12 `src/styles.css`
-Styles for the tag bar, thank-you pill, onboarding modal (reuse the existing
-`modal-overlay`/`modal` pattern from `ImportExport.jsx`), and the moderation
+Tag icons + confirm popover are DONE (`.tag-actions`, `.tag-action`,
+`.tag-icon*`, `.tag-pop*`). Still to add: onboarding modal (reuse the existing
+`modal-overlay`/`modal` pattern from `ImportExport.jsx`) and the moderation
 list. RTL, mobile-first, matching existing tokens.
 
 ### 8.13 Docs
 Update `SCHEMA.md` (new tables/columns, the "points = answers + rewards" model,
-hidden semantics) and `README.md` (feature bullet). Icons available in
-`Icons.jsx` include `IconFlame`, `IconAlert`, `IconSparkles`, `IconTrophy`,
-`IconCheck`, `IconX` — reuse rather than add.
+hidden semantics) and `README.md` (feature bullet). **Both still outstanding.**
+
+Icons: this feature **added** `IconFileX` and `IconStar` to `Icons.jsx` (the
+original advice to reuse only was overtaken — see §7.1 for why the warning
+triangle was rejected). Existing icons available for the remaining sessions:
+`IconFlame`, `IconAlert`, `IconSparkles`, `IconTrophy`, `IconCheck`, `IconX`,
+`IconInbox`, `IconTrash`, `IconReset`.
 
 ---
 
 ## 9. Edge cases & rules
 
+- **Self-reported questions (added 2026-07-21, supersedes the original §7.1
+  assumption):** a user who tags a question `wrong` stops being served it
+  **immediately**, without waiting for `WRONG_THRESHOLD` others to agree. Having
+  told us a question is broken, they shouldn't have to keep answering it while
+  it waits on a quorum. Implemented as a client-side predicate in
+  `activeQuestions()` (`q.my_tag !== 'wrong'`), *not* in the RLS policy — the row
+  must still be fetched so the user can retract the tag, and a per-row subquery
+  on every question read would be needlessly expensive. Consequences:
+  - Retracting the tag brings the question straight back into the pool.
+  - Home tallies and the setup pool count drop by one, so the counts keep
+    promising only what a session can actually serve.
+  - It does **not** yank the question out of the session in progress — the
+    session list is built once at mount, so reporting the question you're
+    looking at never disrupts the current run.
+  - Only `wrong` suppresses; a `quality` tag leaves the question in play.
 - **A question hidden after a user already answered it:** their `user_answers`
   row and earned answer-points remain; the question simply stops being fetched
   (non-admin) or is filtered out (admin), so it drops from Home tallies and new
   sessions. No answer state or points are ever disturbed.
+- **KNOWN DISCREPANCY (accepted, not a bug to "fix" blindly):** the server counts
+  answer-points for hidden questions — `leaderboard()` sums all `user_answers`
+  regardless of `hidden` — but a non-admin client never *receives* those rows, so
+  `grandTotal()` can't include them. A user who answered a question that later
+  got auto-hidden will therefore see a Home hero total slightly **lower** than
+  their own leaderboard row. This follows directly from "answer state is never
+  disturbed" (above) and is self-limiting: it only affects questions that were
+  answered *and* later hidden. Do not fix it by filtering hidden rows out of
+  `leaderboard()` without deciding, deliberately, that hidden questions should
+  retroactively cost users points — that is a product call, not a bug fix.
 - **Retraction after hide:** once hidden, non-admins can't see the question, so
   no new "wrong" tags or retractions arrive — it's effectively sticky (Q12).
   Only `admin_restore_question` brings it back (and resets its wrong tags).
@@ -700,23 +766,39 @@ hidden semantics) and `README.md` (feature bullet). Icons available in
 
 ## 10. Rollout
 
-1. Run `0005_question_feedback.sql` in the Supabase SQL editor (it's idempotent).
-2. Ship the client changes.
+1. ✅ **DONE (2026-07-21)** — `0005_question_feedback.sql` applied to the
+   `Arrow Quiz` project (ref `lyfzjsgverchjdjgvnfv`). Idempotent, so re-running
+   is harmless, but it is no longer a pending step.
+2. Ship the client changes. **Session 1's client code is written but not yet
+   committed or deployed.**
 3. No backfill needed: existing answers already carry answer-points; the rewards
    ledger starts empty; all `wrong_count`/`quality_count` start at 0; nothing is
-   hidden until users tag.
+   hidden until users tag. (Confirmed post-migration: 0 feedback rows, 0 reward
+   rows, 0 hidden, 550 questions and 10,501 answers untouched.)
 
 **Manual QA:**
-- Tag a question `wrong` → +2 once; re-tag/switch/clear → no further points.
-- Three different users tag one question `wrong` → it vanishes for non-admins,
-  appears in the admin panel; Restore brings it back and clears the reports.
-- Admin tags a question `wrong` → hides immediately.
-- Two users tag a question `quality` → it appears under the `רק שאלות איכותיות`
-  filter.
-- New user sees onboarding on Home once; Complete grants +10 once; Skip grants
-  nothing and doesn't reappear; re-open from menu grants nothing.
-- Leaderboard totals reflect answer + reward points; daily board counts today's
-  rewards.
+
+Already verified against the live DB, via a self-aborting transaction so nothing
+persisted (see `IMPLEMENTATION-PLAN.md` → STATUS for the full results):
+- ✅ Tag `wrong` → +2 once; re-tag/switch/clear → no further points.
+- ✅ Three different users tag one question `wrong` → auto-hidden.
+- ✅ Retract after the threshold → stays hidden (sticky).
+- ✅ Non-admin cannot forge `rewards` rows, tag as another user, read others'
+  tags, or call `admin_restore_question`.
+- ✅ `leaderboard()` returns answer + reward points and still ranks correctly.
+
+Still to verify (needs the real client and/or later sessions):
+- ⬜ **The client→Supabase round trip** — tag one question from the real app and
+  confirm a `question_feedback` row and a `rewards` row actually appear. Writes
+  are fire-and-forget, so a malformed call fails *silently*. Do this first.
+- ⬜ Admin tags a question `wrong` → hides immediately (needs a real admin JWT;
+  the definer path is verified, the `is_admin()` branch is not).
+- ⬜ Reported question appears in the admin panel; Restore brings it back
+  (Session 2).
+- ⬜ Two users tag `quality` → appears under `רק שאלות איכותיות` (Session 2).
+- ⬜ New user sees onboarding once; Complete grants +10 once; Skip grants
+  nothing (Session 3).
+- ⬜ Daily board counts today's rewards (needs real reward rows).
 
 ---
 
