@@ -8,6 +8,7 @@ import {
   IconCheck,
   IconX,
   IconInbox,
+  IconStar,
 } from './Icons.jsx'
 
 // Slider stops. Top step is 50; a smaller pool caps the max at the pool size
@@ -212,6 +213,15 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
   // Pool = questions matching the full current selection (course + state + adv).
   const pool = useMemo(() => applyFilters(db.questions, configToFilters(config)).length, [db.questions, config])
 
+  // The same pool ignoring the quality filter. Two jobs: it's the denominator
+  // in the toggle's hint ("12 of 137"), and it tells an empty result apart —
+  // "nothing is tagged yet" reads very differently from "you've answered
+  // everything", and only this number distinguishes them.
+  const poolAll = useMemo(
+    () => applyFilters(db.questions, { ...configToFilters(config), highQualityOnly: false }).length,
+    [db.questions, config],
+  )
+
   // Resolve the effective count: clamp to the pool and snap to an enabled step.
   const { ticks: stops, enabledMaxIdx } = buildStops(pool)
   const enabledTicks = stops.slice(0, enabledMaxIdx + 1)
@@ -290,6 +300,37 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
           </div>
         </div>
 
+        {/* High-quality filter. The signal is the community's (quality_count >=
+            QUALITY_THRESHOLD), not the user's own tag — tagging a question
+            yourself never makes it show up here. */}
+        <div className="switch-group">
+          <label className="switch-row">
+            <span className="switch-label">
+              <span className="switch-title">
+                <IconStar size={15} />
+                רק שאלות איכותיות
+              </span>
+              <span className="switch-hint">
+                {config.highQualityOnly
+                  ? `${pool} מתוך ${poolAll} שאלות בבחירה הזו`
+                  : 'שאלות שסטודנטים סימנו כאיכותיות'}
+              </span>
+            </span>
+            <span className="switch">
+              <input
+                type="checkbox"
+                // Without this the accessible name is the whole label — hint
+                // included — so it would change every time the count changes.
+                aria-label="רק שאלות איכותיות"
+                checked={!!config.highQualityOnly}
+                onChange={(e) => setConfig({ ...config, highQualityOnly: e.target.checked })}
+              />
+              <span className="switch-track" />
+              <span className="switch-thumb" />
+            </span>
+          </label>
+        </div>
+
         <button
           type="button"
           className={`advanced-toggle ${showAdvanced ? 'advanced-toggle-open' : ''}`}
@@ -348,7 +389,28 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
         )}
       </div>
 
-      {pool === 0 ? (
+      {pool === 0 && config.highQualityOnly && poolAll > 0 ? (
+        // Empty *because of* the quality filter, not because the pool is
+        // exhausted. Early on this is the common case — few questions have
+        // reached QUALITY_THRESHOLD — so it gets its own copy and a one-tap way
+        // out, rather than the misleading "you answered everything" state.
+        <div className="card empty-state setup-empty">
+          <span className="empty-icon">
+            <IconStar size={32} />
+          </span>
+          <h2>אין עדיין שאלות איכותיות כאן</h2>
+          <p>
+            עוד לא סומנו מספיק שאלות בבחירה הזו. כבו את הסינון כדי לתרגל את כל{' '}
+            {poolAll} השאלות.
+          </p>
+          <button
+            className="btn"
+            onClick={() => setConfig({ ...config, highQualityOnly: false })}
+          >
+            כבה סינון איכות
+          </button>
+        </div>
+      ) : pool === 0 ? (
         <div className="card empty-state setup-empty setup-empty-success">
           <span className="empty-icon empty-icon-success">
             <IconCheck size={32} />

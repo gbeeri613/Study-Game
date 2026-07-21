@@ -5,6 +5,7 @@
 import { supabase } from './supabase.js'
 import { SCHEMA_VERSION, loadDb } from './storage.js'
 import { PREVIEW_USER_ID } from './useAuth.js'
+import { WRONG_THRESHOLD } from './points.js'
 
 // Content columns pulled from the questions table, in schema order. The
 // moderation columns ride along so the client can apply the high-quality filter
@@ -87,12 +88,18 @@ function synthPreviewFields(db) {
     let h = 0
     for (let i = 0; i < String(q.id).length; i++) h = (h * 31 + String(q.id).charCodeAt(i)) | 0
     const bucket = Math.abs(h) % 10
+    // One bucket models a question that has already crossed the report
+    // threshold and been auto-hidden. Without it `hidden` would be false for
+    // every question in preview, and the states that only exist for hidden
+    // rows — the moderation list's מוסתרת badge, Restore, and the exclusion
+    // from the practice pool — would be unreachable locally.
+    const autoHidden = bucket === 8
     return {
       ...q,
       // Roughly a third of the bank reads as community-endorsed.
       quality_count: bucket < 3 ? 2 + (bucket % 2) : 0,
-      wrong_count: bucket === 9 ? 1 : 0,
-      hidden: false,
+      wrong_count: autoHidden ? WRONG_THRESHOLD : bucket === 9 ? 1 : 0,
+      hidden: autoHidden,
       my_tag: q.my_tag ?? null,
       tag_rewarded: q.tag_rewarded ?? false,
     }

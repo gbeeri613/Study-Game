@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react'
 import { exportDb } from '../lib/storage.js'
 import { validateImport } from '../lib/validate.js'
-import { upsertQuestions, deleteQuestions } from '../lib/api.js'
+import { upsertQuestions, deleteQuestions, adminRestoreQuestion } from '../lib/api.js'
 import { distinctValues, NONE_VALUE } from '../lib/session.js'
 import { courseLabel } from '../data/labels.js'
+import { WRONG_THRESHOLD } from '../lib/points.js'
 import {
   IconUpload,
   IconDownload,
@@ -12,6 +13,7 @@ import {
   IconTrash,
   IconAlert,
   IconChevronDown,
+  IconFileX,
 } from './Icons.jsx'
 
 // The bucket a question's course falls under (missing course → NONE sentinel),
@@ -36,6 +38,20 @@ export default function ImportExport({ db, dispatch, onRefresh }) {
   // confirmation dialog is open.
   const [delCourse, setDelCourse] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
+
+  // Moderation: the question awaiting a delete confirmation, and the id
+  // currently mid-request (so only that row's buttons disable).
+  const [modPending, setModPending] = useState(null)
+  const [modBusy, setModBusy] = useState(null)
+
+  // Everything the community (or the admin) has flagged. The admin receives
+  // hidden rows and the counter columns in `db.questions`, so this needs no
+  // extra query. Hidden-but-uncounted rows still surface: an admin's own
+  // `wrong` tag hides a question immediately, and admin_restore_question zeroes
+  // wrong_count without unhiding others' reports.
+  const reported = db.questions
+    .filter((q) => (q.wrong_count ?? 0) > 0 || q.hidden)
+    .sort((a, b) => (b.wrong_count ?? 0) - (a.wrong_count ?? 0))
 
   // Course options + how many questions each holds, so the admin sees the
   // blast radius before deleting.
@@ -134,6 +150,43 @@ export default function ImportExport({ db, dispatch, onRefresh }) {
     }
   }
 
+  // Un-hide a reported question and clear the `wrong` tags against it. The RPC
+  // re-checks is_admin() server-side, so this button is a convenience, not the
+  // guard.
+  async function doRestore(id) {
+    if (modBusy) return
+    setModBusy(id)
+    setNotice(null)
+    try {
+      await adminRestoreQuestion(id)
+      setNotice('השאלה שוחזרה והדיווחים נוקו.')
+      if (onRefresh) await onRefresh()
+    } catch (err) {
+      setNotice(`שחזור נכשל: ${err.message}`)
+    } finally {
+      setModBusy(null)
+    }
+  }
+
+  // Permanent delete of a single reported question — same path as the
+  // by-course delete, so feedback and rewards cascade with it.
+  async function doDeleteReported() {
+    if (!modPending || modBusy) return
+    setModBusy(modPending.id)
+    setNotice(null)
+    try {
+      await deleteQuestions([modPending.id])
+      setModPending(null)
+      setNotice('השאלה נמחקה מהמאגר המשותף.')
+      if (onRefresh) await onRefresh()
+    } catch (err) {
+      setModPending(null)
+      setNotice(`מחיקה נכשלה: ${err.message}`)
+    } finally {
+      setModBusy(null)
+    }
+  }
+
   return (
     <div className="manage">
       <div className="card">
@@ -204,6 +257,56 @@ export default function ImportExport({ db, dispatch, onRefresh }) {
           <IconDownload size={17} />
           ייצא JSON
         </button>
+      </div>
+
+      <div className="card">
+        <h2>שאלות שדווחו</h2>
+        <p className="muted">
+          שאלות שלומדים סימנו כשגויות. שאלה שנצברו עליה{' '}
+          <strong>{WRONG_THRESHOLD}</strong> דיווחים מוסתרת אוטומטית ואינה מוצגת
+          יותר. <strong>שחזור</strong> מחזיר אותה למאגר ומנקה את הדיווחים;{' '}
+          <strong>מחיקה</strong> היא לצמיתות.
+        </p>
+
+        {reported.length === 0 ? (
+          <p className="muted">אין כרגע שאלות שדווחו. 🎉</p>
+        ) : (
+          <ul className="mod-list">
+            {reported.map((q) => (
+              <li key={q.id} className="mod-row">
+                <div className="mod-main">
+                  <p className="mod-question">{q.question}</p>
+                  <div className="mod-meta">
+                    <span>{courseLabel(q.course)}</span>
+                    <span className="mod-count">
+                      <IconFileX size={13} />
+                      {q.wrong_count ?? 0}
+                    </span>
+                    {q.hidden && <span className="mod-badge">מוסתרת</span>}
+                  </div>
+                </div>
+                <div className="mod-actions">
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => doRestore(q.id)}
+                    disabled={modBusy != null}
+                  >
+                    <IconReset size={15} />
+                    שחזר
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => setModPending(q)}
+                    disabled={modBusy != null}
+                  >
+                    <IconTrash size={15} />
+                    מחק
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="card">
@@ -291,6 +394,49 @@ export default function ImportExport({ db, dispatch, onRefresh }) {
               <button className="btn btn-danger" onClick={doDelete} disabled={busy}>
                 <IconTrash size={16} />
                 {busy ? 'מוחק…' : 'מחק לצמיתות'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modPending && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !modBusy && setModPending(null)}
+        >
+          <div
+            className="modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="mod-del-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="modal-icon modal-icon-danger">
+              <IconAlert size={26} />
+            </span>
+            <h3 id="mod-del-title">מחיקת השאלה</h3>
+            <p className="muted">
+              השאלה תימחק לצמיתות מהמאגר המשותף, על כל הדיווחים והתיוגים שלה.
+              הפעולה אינה הפיכה ומשפיעה על כל המשתמשים.
+            </p>
+            <p className="mod-confirm-q">{modPending.question}</p>
+            <div className="modal-actions">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setModPending(null)}
+                disabled={modBusy != null}
+              >
+                ביטול
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={doDeleteReported}
+                disabled={modBusy != null}
+              >
+                <IconTrash size={16} />
+                {modBusy ? 'מוחק…' : 'מחק לצמיתות'}
               </button>
             </div>
           </div>

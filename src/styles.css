@@ -755,6 +755,29 @@ button {
   padding-top: 8px;
 }
 
+/* Two-line label beside a switch: title + a hint that carries the matched
+   count once the filter is on. */
+.switch-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.switch-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-1);
+}
+/* Same --warn as .tag-icon-quality, so the star here reads as the same signal
+   as the star on a question card. */
+.switch-title svg { color: var(--warn); flex: 0 0 auto; }
+.switch-hint {
+  font-size: 12.5px;
+  color: var(--text-3);
+  line-height: 1.35;
+}
+
 /* ---- Filter (session setup) -------------------------------------------------------------- */
 
 /* Advanced options disclosure */
@@ -1240,6 +1263,71 @@ button {
 .err-list li { color: var(--bad); margin-bottom: 4px; }
 .warn-list li { color: var(--warn); margin-bottom: 4px; }
 .warn { color: var(--warn); font-size: 14px; }
+/* ---- Reported-questions moderation list ------------------------------------ */
+
+.mod-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mod-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.mod-row:first-child { border-top: 0; padding-top: 4px; }
+.mod-main { flex: 1 1 220px; min-width: 0; }
+
+/* Two lines of the question is enough to identify it; the full text lives in
+   the delete confirmation. */
+.mod-question {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text-1);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mod-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.mod-count { display: inline-flex; align-items: center; gap: 4px; color: var(--bad); }
+.mod-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bad-bg);
+  color: var(--bad);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.mod-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+/* The full question text in the delete confirmation — the truncated row above
+   isn't enough to delete something irreversibly on. */
+.mod-confirm-q {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  text-align: start;
+}
+
 .tool-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
 .field + .tool-buttons { margin-top: 14px; }
 
