@@ -6,35 +6,56 @@ import { supabase } from './supabase.js'
 import { SCHEMA_VERSION, loadDb } from './storage.js'
 import { PREVIEW_USER_ID } from './useAuth.js'
 
-// Content columns pulled from the questions table, in schema order.
+// Content columns pulled from the questions table, in schema order. The
+// moderation columns ride along so the client can apply the high-quality filter
+// and (for the admin) build the reported-questions list without a second query.
 const QUESTION_COLUMNS =
-  'id, course, unit, topic, difficulty, question, options, answer, option_explanations, explanation'
+  'id, course, unit, topic, difficulty, question, options, answer, option_explanations, explanation, ' +
+  'hidden, wrong_count, quality_count'
 
 // Fetch the whole db for a user: all shared questions, with this user's answer
-// state merged onto each. Returns the standard { schema_version, questions } db.
+// state and own tag merged onto each, plus the user's reward total and
+// onboarding state. Returns the standard { schema_version, questions } db.
+//
+// Note the asymmetry: answer state and tags are per-user and merged onto each
+// question, while the tag *counts* are shared and come straight off the row. A
+// user never receives anyone else's tags — RLS enforces that, not this code.
 export async function fetchRemoteDb(userId) {
   // Dev-only (`?preview` fake user): serve the locally cached db instead of
   // hitting Supabase. Stripped from production builds.
   if (import.meta.env.DEV && userId === PREVIEW_USER_ID) {
     const cached = loadDb()
-    if (cached) return cached
+    if (cached) return synthPreviewFields(cached)
     throw new Error('preview mode: no cached db in localStorage')
   }
 
-  const [qRes, aRes] = await Promise.all([
+  const [qRes, aRes, fRes, rRes, pRes] = await Promise.all([
     supabase.from('questions').select(QUESTION_COLUMNS),
     supabase
       .from('user_answers')
       .select('question_id, answered_at, last_choice, correct')
       .eq('user_id', userId),
+    supabase.from('question_feedback').select('question_id, tag').eq('user_id', userId),
+    supabase.from('rewards').select('kind, question_id, points').eq('user_id', userId),
+    supabase.from('profiles').select('onboarded_at').eq('id', userId).maybeSingle(),
   ])
 
   if (qRes.error) throw qRes.error
   if (aRes.error) throw aRes.error
+  if (fRes.error) throw fRes.error
+  if (rRes.error) throw rRes.error
+  if (pRes.error) throw pRes.error
 
-  const answersById = new Map(
-    (aRes.data ?? []).map((a) => [a.question_id, a]),
+  const answersById = new Map((aRes.data ?? []).map((a) => [a.question_id, a]))
+  const tagsById = new Map((fRes.data ?? []).map((f) => [f.question_id, f.tag]))
+
+  // Which questions have already paid out their one-time tag reward. Drives the
+  // optimistic +2 in the reducer, so a re-tag doesn't animate points that the
+  // server won't actually grant.
+  const rewardedIds = new Set(
+    (rRes.data ?? []).filter((r) => r.kind === 'tag').map((r) => r.question_id),
   )
+  const rewardsTotal = (rRes.data ?? []).reduce((sum, r) => sum + r.points, 0)
 
   const questions = (qRes.data ?? []).map((q) => {
     const a = answersById.get(q.id)
@@ -43,6 +64,8 @@ export async function fetchRemoteDb(userId) {
       answered_at: a?.answered_at ?? null,
       last_choice: a?.last_choice ?? null,
       correct: a?.correct ?? null,
+      my_tag: tagsById.get(q.id) ?? null,
+      tag_rewarded: rewardedIds.has(q.id),
     }
   })
 
@@ -50,6 +73,35 @@ export async function fetchRemoteDb(userId) {
     schema_version: SCHEMA_VERSION,
     exported_at: new Date().toISOString(),
     questions,
+    rewards_total: rewardsTotal,
+    onboarded_at: pRes.data?.onboarded_at ?? null,
+  }
+}
+
+// `?preview` has no backend, so the fields the server would supply are
+// fabricated here — deterministically from the question id, so the same
+// questions stay "high quality" across reloads and the filter is testable.
+// Dev-only; stripped from production builds.
+function synthPreviewFields(db) {
+  const questions = db.questions.map((q) => {
+    let h = 0
+    for (let i = 0; i < String(q.id).length; i++) h = (h * 31 + String(q.id).charCodeAt(i)) | 0
+    const bucket = Math.abs(h) % 10
+    return {
+      ...q,
+      // Roughly a third of the bank reads as community-endorsed.
+      quality_count: bucket < 3 ? 2 + (bucket % 2) : 0,
+      wrong_count: bucket === 9 ? 1 : 0,
+      hidden: false,
+      my_tag: q.my_tag ?? null,
+      tag_rewarded: q.tag_rewarded ?? false,
+    }
+  })
+  return {
+    ...db,
+    questions,
+    rewards_total: db.rewards_total ?? 0,
+    onboarded_at: db.onboarded_at ?? null,
   }
 }
 
@@ -75,6 +127,71 @@ export async function resetAnswers(userId, ids) {
   let query = supabase.from('user_answers').delete().eq('user_id', userId)
   if (ids && ids.length) query = query.in('question_id', ids)
   const { error } = await query
+  if (error) throw error
+}
+
+// ---- Question feedback (tagging) ------------------------------------------
+// Writes are the user's own feedback row only; everything downstream — the tag
+// counts, the auto-hide, and the +2 reward — is done by the database trigger.
+// The client never writes to `rewards`; it has no policy to do so.
+
+// True while the app is running against the fake `?preview` user, which has no
+// backend. Dev-only, so these branches vanish from production builds.
+function previewMode() {
+  return (
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has('preview')
+  )
+}
+
+// Attach (or switch to) a tag on a question. `tag` is 'wrong' | 'quality'.
+export async function setTag(userId, questionId, tag) {
+  if (previewMode()) return
+  const { error } = await supabase.from('question_feedback').upsert(
+    {
+      user_id: userId,
+      question_id: questionId,
+      tag,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id,question_id' },
+  )
+  if (error) throw error
+}
+
+// Remove this user's tag from a question. Never claws back the reward.
+export async function clearTag(userId, questionId) {
+  if (previewMode()) return
+  const { error } = await supabase
+    .from('question_feedback')
+    .delete()
+    .eq('user_id', userId)
+    .eq('question_id', questionId)
+  if (error) throw error
+}
+
+// ---- Onboarding ------------------------------------------------------------
+// Both RPCs mark the onboarding as seen; only `claim` grants points, and only
+// the first time (enforced by a partial unique index on rewards).
+
+export async function claimOnboarding() {
+  if (previewMode()) return
+  const { error } = await supabase.rpc('complete_tag_onboarding')
+  if (error) throw error
+}
+
+export async function dismissOnboarding() {
+  if (previewMode()) return
+  const { error } = await supabase.rpc('dismiss_tag_onboarding')
+  if (error) throw error
+}
+
+// ---- Admin moderation ------------------------------------------------------
+
+// Un-hide a reported question and clear the 'wrong' tags against it, so it
+// doesn't immediately re-hide. Admin-only; the RPC re-checks that server-side.
+export async function adminRestoreQuestion(questionId) {
+  if (previewMode()) return
+  const { error } = await supabase.rpc('admin_restore_question', { qid: questionId })
   if (error) throw error
 }
 
@@ -119,10 +236,11 @@ export async function fetchLeaderboard(period = 'all') {
 // renders without a backend.
 function previewLeaderboard(period) {
   const cached = loadDb()
-  const mine = (cached?.questions ?? []).reduce((sum, q) => {
-    if (q.answered_at == null) return sum
-    return sum + (q.correct ? 10 : 3)
-  }, 0)
+  const mine =
+    (cached?.questions ?? []).reduce((sum, q) => {
+      if (q.answered_at == null) return sum
+      return sum + (q.correct ? 10 : 3)
+    }, 0) + (cached?.rewards_total ?? 0)
   const scale = period === 'daily' ? 0.35 : 1
   const rivals = [
     { name: 'דנה כהן', points: 940 },

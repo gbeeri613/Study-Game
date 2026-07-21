@@ -847,7 +847,13 @@ button {
 
 .question-card { animation: fadeUp var(--dur-2) var(--ease-out) both; }
 
-.question-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.question-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
 .chip {
   display: inline-flex;
   align-items: center;
@@ -966,6 +972,118 @@ button {
   display: inline-block;
 }
 .expl-general p { margin: 6px 0 0; font-size: 14px; color: var(--text-2); }
+
+/* ---- Post-answer tagging -------------------------------------------------
+   Two quiet icons parked at the end of the question's meta row. Tagging is
+   optional and most questions should get none, so the control stays nearly
+   invisible until wanted; the confirm popover is the second step that stops
+   a hard question being reflex-reported as wrong. */
+
+.tag-actions {
+  display: flex;
+  gap: 2px;
+  /* Push to the far end of the meta row — visually the top-left in RTL. */
+  margin-inline-start: auto;
+}
+
+.tag-action { position: relative; }
+
+.tag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  opacity: 0.65;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background var(--dur-1) var(--ease-out),
+    opacity var(--dur-1) var(--ease-out);
+}
+.tag-icon:hover { opacity: 1; background: var(--surface-2); }
+.tag-icon:active { transform: scale(0.92); }
+.tag-icon[aria-expanded='true'] { opacity: 1; background: var(--surface-2); }
+
+/* Once tagged the icon holds its colour, so the user's own tag is visible at
+   a glance on return. Nobody ever sees anyone else's. */
+.tag-icon-wrong.tag-icon-active {
+  color: var(--bad);
+  background: var(--bad-bg);
+  opacity: 1;
+}
+.tag-icon-quality.tag-icon-active {
+  color: var(--warn);
+  background: rgba(255, 199, 94, 0.1);
+  opacity: 1;
+}
+
+.tag-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Anchored to the inline END so the panel opens back toward the middle of
+     the card. Anchoring to the start would run it off the screen edge, since
+     these icons sit at the far edge of the meta row. */
+  inset-inline-end: 0;
+  z-index: 20;
+  width: min(268px, calc(100vw - 48px));
+  padding: 13px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+  text-align: start;
+  animation: fadeUp var(--dur-1) var(--ease-out) both;
+}
+
+.tag-pop-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+.tag-pop-body {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.tag-pop-btn {
+  width: 100%;
+  margin-top: 11px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 650;
+  border-radius: var(--radius-sm);
+}
+.tag-pop-btn-wrong {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border: 1px solid var(--bad-border);
+}
+.tag-pop-btn-quality {
+  color: var(--warn);
+  background: rgba(255, 199, 94, 0.1);
+  border: 1px solid rgba(255, 199, 94, 0.45);
+}
+.tag-pop-thanks {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.tag-pop-points {
+  display: inline-block;
+  margin-inline-start: 6px;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 .practice-nav {
   position: sticky;

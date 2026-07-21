@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  activeQuestions,
   applyFilters,
   buildSession,
   configToFilters,
@@ -9,6 +10,7 @@ import {
 import { courseLabel } from '../data/labels.js'
 import { sessionPoints } from '../lib/points.js'
 import { IconX, IconCheck, IconChevronLeft } from './Icons.jsx'
+import TagBar from './TagBar.jsx'
 
 // Hebrew letter prefixes for options (א, ב, ג, ...)
 const HEB_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י']
@@ -28,7 +30,9 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
     let pool
     if (overrideQuestionIds && overrideQuestionIds.length) {
       const idset = new Set(overrideQuestionIds)
-      pool = db.questions.filter((q) => idset.has(q.id))
+      // A question can get hidden between finishing a session and reviewing its
+      // mistakes, so filter here too rather than trusting the id list.
+      pool = activeQuestions(db.questions).filter((q) => idset.has(q.id))
     } else {
       const matching = applyFilters(db.questions, configToFilters(config))
       pool = selectSessionQuestions(matching, config.count)
@@ -108,6 +112,16 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
     setIdx((i) => i + 1)
     setSelectedSlot(null)
     setAttempted(false)
+  }
+
+  // Tagging is optional and never touches answer state. `next` is a tag value,
+  // or null to retract. TagBar owns the confirmation UI; this just persists.
+  function handleTag(next) {
+    if (next === null) {
+      dispatch({ type: 'CLEAR_TAG', id: liveQuestion.id })
+      return
+    }
+    dispatch({ type: 'TAG_QUESTION', id: liveQuestion.id, tag: next })
   }
 
   function pick(displaySlot) {
@@ -191,6 +205,16 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
             <span className={`chip ${liveQuestion.correct ? 'chip-ok' : 'chip-bad'}`}>
               {liveQuestion.correct ? 'נענתה נכון' : 'נענתה שגוי'}
             </span>
+          )}
+          {/* Available as soon as an attempt is recorded — including on a wrong
+              pick, where the runner deliberately doesn't reveal the answer.
+              That moment is exactly when a user wants to challenge a question. */}
+          {attempted && (
+            <TagBar
+              myTag={liveQuestion.my_tag ?? null}
+              tagRewarded={!!liveQuestion.tag_rewarded}
+              onChange={handleTag}
+            />
           )}
         </div>
 
