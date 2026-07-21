@@ -7,9 +7,9 @@ PRD first — this only sequences the work. Section refs (§) point into the PRD
 
 ## STATUS (updated 2026-07-21)
 
-**Session 1 is COMPLETE and the migration is LIVE on production.** Sessions 2
-and 3 are untouched. Nothing is committed yet — all of Session 1 sits as
-uncommitted changes in the worktree.
+**Sessions 1 and 2 are COMPLETE and the migration is LIVE on production.**
+Session 1 is merged into `main` (PR #15, commit `5068c2d`). Session 3 is
+untouched.
 
 **The DB is already migrated — do NOT re-run `0005` expecting it to be pending.**
 It was applied to the `Arrow Quiz` Supabase project (ref `lyfzjsgverchjdjgvnfv`)
@@ -46,19 +46,37 @@ production**):
 3. **Self-reported questions are suppressed for the reporter** — a new rule from
    the owner, not in the original PRD. See PRD §9 "Self-reported questions".
 4. `IconFileX` and `IconStar` were added to `Icons.jsx`.
+5. **The preview synth now models a hidden question** (Session 2). It used to
+   pin `hidden: false` for every row, which made the `מוסתרת` badge, Restore,
+   and the hidden-exclusion filter unreachable in `?preview`. One id bucket is
+   now auto-hidden with `wrong_count = WRONG_THRESHOLD`.
 
-### Known gap carried into Session 2
+### ~~Known gap carried into Session 2~~ — CLOSED 2026-07-21
 
-**The client→Supabase round trip has never actually run.** Every client check so
-far was in `?preview`, where `setTag`/`clearTag`/the onboarding RPCs
-deliberately no-op. The DB proves the *policies* are correct, but nothing has
-yet proven that the supabase-js calls in `api.js` are shaped right — the
-`onConflict: 'user_id,question_id'` string, the new `QUESTION_COLUMNS` names,
-the `maybeSingle()` on `profiles`. Because tag writes are fire-and-forget with
-only a `console.error`, a mistake there **fails silently**: the UI would show
-+2, and nothing would persist. First task of the next session that touches a
-real backend: tag one question against real Supabase and confirm a
-`question_feedback` row and a `rewards` row actually appear.
+**The client→Supabase round trip has now run end to end on production.** Two
+questions were tagged in the deployed app (`study-game-zeta.vercel.app`, real
+build, no `?preview`) and the rows were read back through the *authenticated*
+client — so this also confirms RLS lets a user read their own rows, the path
+`fetchRemoteDb` depends on:
+
+- `question_feedback`: 2 rows (`anthropology-u1-4tet`=quality,
+  `anthropology-u6-a4c1`=wrong) — so `onConflict: 'user_id,question_id'`
+  resolves against the real PK.
+- `rewards`: 2 × `kind='tag'`, `points=2`. The SECURITY DEFINER trigger fires
+  for an ordinary client write, not just under the forged-JWT test.
+- Counters recounted on both questions; `rewards_total` = 4.
+- The full `QUESTION_COLUMNS` string returns 200 with all 13 columns, and
+  `maybeSingle()` on `profiles` returns exactly one row.
+
+Corroborating detail: on both rows `updated_at` precedes `created_at` by ~90ms
+— the client-supplied `new Date().toISOString()` from `setTag` sitting beside
+the server's `default now()`. The payload that landed is the one `api.js`
+builds.
+
+**Note for future testing:** the admin's own `wrong` tag hides a question
+immediately (migration line ~157), so `wrong_count=1` + `hidden=true` is
+correct, not a threshold bug — and the 3-report quorum path **cannot** be
+exercised from the admin account. It needs a non-admin user.
 
 ## Scope verdict
 
@@ -134,7 +152,7 @@ verified on production**, including the RLS-as-real-user pass. See STATUS above.
 
 ---
 
-## Session 2 — Discovery & moderation — ⬜ NOT STARTED
+## Session 2 — Discovery & moderation — ✅ DONE
 
 **Goal:** users can filter to community-high-quality questions; admin can review
 and act on reported/hidden questions. (Depends on Session 1's data layer.)
@@ -155,10 +173,30 @@ Home hero already uses `grandTotal`. `adminRestoreQuestion()` already exists in
 - `src/components/Home.jsx` — points hero uses `grandTotal` (answer + rewards)
   (PRD §8.9, first bullet).
 
-**Definition of done / verify:** in `?preview`, toggling high-quality narrows the
-pool to synthesized `quality_count >= 2` questions and composes with course/state
-filters; admin Manage tab lists reported questions and Restore/Delete update the
-list. Live-DB: restore un-hides + clears reports.
+**Definition of done / verify — VERIFIED in `?preview`:** toggling high-quality
+narrowed the pool 57 → 17 and composed with course/unit/state filters; the count
+slider and start button recomputed; the Manage tab listed 14 reported questions
+sorted by `wrong_count` desc with `מוסתרת` badges, and the delete confirmation
+showed the full (untruncated) question text.
+
+**Deviations from the plan above:**
+
+1. **The Home hero bullet was already done** in Session 1 (deviation #1), so
+   `Home.jsx` was not touched this session.
+2. **A second empty state was added** to `SessionSetup.jsx`, beyond "show
+   matched-count". When the pool is empty *because of* the quality filter, the
+   pre-existing empty state claimed `כל הכבוד! כבר ענית נכון על כל השאלות` —
+   flatly wrong, and the common case early on. It now branches on
+   `poolAll > 0` and offers a one-tap `כבה סינון איכות`.
+3. **`aria-label` on the toggle input**, so its accessible name doesn't change
+   every time the matched count changes.
+4. **The preview synth was extended** to model a hidden question — see
+   deviation #5 in STATUS.
+
+**Still only provable on the live DB:** in `?preview` the Restore button shows
+its success toast but the row does not disappear — `adminRestoreQuestion` no-ops
+there and the synth re-derives `hidden` from the question id on every load. That
+restore actually un-hides and clears reports is untested outside SQL.
 
 ---
 

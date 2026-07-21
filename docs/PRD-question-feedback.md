@@ -532,7 +532,9 @@ from the constant (or from its mirror in the SQL trigger).
 
 Add a toggle to the setup screen, e.g. under the state filters:
 
-> `רק שאלות איכותיות` — with a one-line hint: `שאלות שלומדים סימנו כאיכותיות`.
+> `רק שאלות איכותיות` — with a one-line hint: `שאלות שסטודנטים סימנו כאיכותיות`.
+> Once the filter is on, the hint is replaced by the matched count
+> (`N מתוך M שאלות בבחירה הזו`).
 
 - Backed by the **community** signal (Q13): a question is "high quality" when
   `quality_count >= QUALITY_THRESHOLD` (=2).
