@@ -10,6 +10,7 @@ dist-ssr
 npm-debug.log*
 .env
 .env.*
+!.env.example
 .vercel
 
 # Generated one-time seed data dumps (source of truth is the DB)

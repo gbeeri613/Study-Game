@@ -5,11 +5,21 @@ PRD first — this only sequences the work. Section refs (§) point into the PRD
 
 ---
 
-## STATUS (updated 2026-07-21)
+## STATUS (updated 2026-07-21, Session 3)
 
-**Sessions 1 and 2 are COMPLETE and the migration is LIVE on production.**
-Session 1 is merged into `main` (PR #15, commit `5068c2d`). Session 3 is
-untouched.
+**All three sessions are COMPLETE and the migration is LIVE on production.**
+Session 1 merged as PR #15 (`5068c2d`), Session 2 as PR #16 (`a98d8ad`).
+Session 3 (onboarding modal + docs) is this branch.
+
+**Still open on the live DB** (neither is provable in `?preview` or from the
+admin account):
+
+- **Restore has never run through the client.** The moderation card's Restore
+  button no-ops in `?preview`; it needs one click on a real reported question
+  in the deployed app, then confirm the row un-hides and `wrong_count` clears.
+  (Attempted this session; blocked — no authenticated browser available.)
+- **The 3-report auto-hide quorum** cannot be exercised from the admin account
+  (an admin `wrong` tag hides immediately). Needs a non-admin user.
 
 **The DB is already migrated — do NOT re-run `0005` expecting it to be pending.**
 It was applied to the `Arrow Quiz` Supabase project (ref `lyfzjsgverchjdjgvnfv`)
@@ -200,7 +210,7 @@ restore actually un-hides and clears reports is untested outside SQL.
 
 ---
 
-## Session 3 — Onboarding + docs — ⬜ NOT STARTED
+## Session 3 — Onboarding + docs — ✅ DONE
 
 **Goal:** first-time users get the one-time Home demo (+10 once); docs updated.
 (Depends on Session 1's RPCs + `onboarded_at`.)
@@ -226,10 +236,31 @@ control the app no longer has would be worse than no demo.
 - `SCHEMA.md` + `README.md` — new tables/columns, "points = answers + rewards",
   hidden semantics, feature bullet (PRD §8.13).
 
-**Definition of done / verify:** in `?preview`, a user with synthesized
-`onboarded_at == null` sees the modal once; Complete grants +10 and it doesn't
-reappear; Skip grants nothing and doesn't reappear; re-open from the menu grants
-nothing. Docs reflect the shipped model.
+**Definition of done / verify — ALL VERIFIED in `?preview`:** modal auto-shows
+when `onboarded_at == null`; Complete bumps the hero +10, shows the `+10 נק׳`
+affirmation, closes, and doesn't reappear on reload; dismissing grants nothing
+and doesn't reappear (`rewards_total` stayed 0 in localStorage); re-open from
+the account menu is read-only; the demo tap opens the real confirm popover and
+lands the reinforcement line with no +2 promised.
+
+**Deviations from the plan above:**
+
+1. **The demo embeds the real `<TagBar>`**, not a mock control, with
+   `tagRewarded` pinned true — so the demo can never drift from the shipped UI
+   and its thank-you never shows a `+2` the mock tap doesn't grant.
+2. **Dismissing the overlay counts as Skip** on the first showing (calls
+   `dismiss_tag_onboarding`), so an accidental outside-tap also stops the
+   auto-nag — consistent with "Skip grants nothing and doesn't reappear".
+3. **Re-open (menu item `איך מתייגים שאלות?`) is strictly read-only:** same
+   demo, one close button, no RPCs. Consequence: the +10 is only claimable on
+   the first showing — a user who skipped cannot claim it later, which is the
+   literal DoD ("re-open grants nothing") though the server-side
+   `complete_tag_onboarding` would technically still pay a skipper.
+4. **`README.md` was modernized wholesale**, not just given a feature bullet —
+   it still described the pre-Supabase local-JSON app (no backend, JSON
+   export/import as sync, a project tree of files that no longer exist).
+5. **`.env.example` added** (the supabase.js error copy referenced it but it
+   was never committed) plus a `.gitignore` exception for it.
 
 ---
 
