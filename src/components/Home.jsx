@@ -297,15 +297,21 @@ export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }
     const map = new Map()
     for (const q of activeQuestions(db.questions)) {
       const slug = q.course == null || q.course === '' ? NONE_VALUE : q.course
-      if (!map.has(slug)) map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0 })
+      if (!map.has(slug))
+        map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0, newest: 0 })
       const row = map.get(slug)
       row.total += 1
+      // Course order = freshest content first, so a course that just got new
+      // questions surfaces at the top. Missing created_at sorts oldest.
+      const t = q.created_at ? Date.parse(q.created_at) : 0
+      if (t > row.newest) row.newest = t
       if (q.answered_at == null) row.unanswered += 1
       else if (q.correct) row.correct += 1
       else row.incorrect += 1
     }
-    return [...map.values()].sort((a, b) =>
-      courseName(a.slug).localeCompare(courseName(b.slug), 'he'),
+    return [...map.values()].sort(
+      (a, b) =>
+        b.newest - a.newest || courseName(a.slug).localeCompare(courseName(b.slug), 'he'),
     )
   }, [db.questions])
 
@@ -318,10 +324,15 @@ export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }
 
   // Tag onboarding. `firstTime` is snapshotted when the modal opens (not read
   // live from db) so completing — which sets onboarded_at — doesn't flip the
-  // modal to its read-only variant mid-affirmation. Auto-open only while the
-  // profile has never seen it; the account menu can re-open it read-only.
+  // modal to its read-only variant mid-affirmation. Auto-open only while BOTH
+  // hold: the user never finished the demo (closing without finishing doesn't
+  // set onboarded_at, so it re-appears on a later visit) AND they've never
+  // tagged a real question — someone already tagging needs no intro.
+  // `tag_rewarded` catches tags that were placed and later retracted.
   const [onboarding, setOnboarding] = useState(() =>
-    db.onboarded_at == null ? { firstTime: true } : null,
+    db.onboarded_at == null && !db.questions.some((q) => q.my_tag || q.tag_rewarded)
+      ? { firstTime: true }
+      : null,
   )
   const closeOnboarding = () => setOnboarding(null)
 
@@ -373,10 +384,6 @@ export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }
         <OnboardingModal
           firstTime={onboarding.firstTime}
           onComplete={() => dispatch({ type: 'ONBOARDING_DONE' })}
-          onSkip={() => {
-            dispatch({ type: 'ONBOARDING_SKIP' })
-            closeOnboarding()
-          }}
           onClose={closeOnboarding}
         />
       )}
