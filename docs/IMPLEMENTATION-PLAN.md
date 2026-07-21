@@ -7,19 +7,23 @@ PRD first — this only sequences the work. Section refs (§) point into the PRD
 
 ## STATUS (updated 2026-07-21, Session 3)
 
-**All three sessions are COMPLETE and the migration is LIVE on production.**
-Session 1 merged as PR #15 (`5068c2d`), Session 2 as PR #16 (`a98d8ad`).
-Session 3 (onboarding modal + docs) is this branch.
+**All three sessions are COMPLETE, MERGED, and the migration is LIVE on
+production.** Session 1 merged as PR #15 (`5068c2d`), Session 2 as PR #16
+(`a98d8ad`), Session 3 as PR #17 (`5ac597d`). The feature is fully shipped.
 
-**Still open on the live DB** (neither is provable in `?preview` or from the
-admin account):
+- **Restore — VERIFIED on production (2026-07-21).** The owner clicked שחזר on
+  a real reported question in the deployed app; the row un-hid and left the
+  moderation list. This was the last client path that had only ever been
+  proven in SQL.
 
-- **Restore has never run through the client.** The moderation card's Restore
-  button no-ops in `?preview`; it needs one click on a real reported question
-  in the deployed app, then confirm the row un-hides and `wrong_count` clears.
-  (Attempted this session; blocked — no authenticated browser available.)
+**The one remaining untested path:**
+
 - **The 3-report auto-hide quorum** cannot be exercised from the admin account
-  (an admin `wrong` tag hides immediately). Needs a non-admin user.
+  (an admin `wrong` tag hides immediately). Needs a non-admin user — any
+  second Google account tagging the same question `wrong` three times over
+  three accounts, or just organic usage once other students are on the app.
+  Low risk: the same trigger path (recount + threshold compare) was proven in
+  the SQL QA pass; only the "three real non-admin clients" variant is unproven.
 
 **The DB is already migrated — do NOT re-run `0005` expecting it to be pending.**
 It was applied to the `Arrow Quiz` Supabase project (ref `lyfzjsgverchjdjgvnfv`)
@@ -205,8 +209,10 @@ showed the full (untruncated) question text.
 
 **Still only provable on the live DB:** in `?preview` the Restore button shows
 its success toast but the row does not disappear — `adminRestoreQuestion` no-ops
-there and the synth re-derives `hidden` from the question id on every load. That
-restore actually un-hides and clears reports is untested outside SQL.
+there and the synth re-derives `hidden` from the question id on every load.
+~~That restore actually un-hides and clears reports is untested outside SQL.~~
+**Closed 2026-07-21** — the owner ran Restore on a real reported question in
+the deployed app and the row un-hid (see STATUS).
 
 ---
 
