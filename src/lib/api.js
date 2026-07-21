@@ -9,10 +9,11 @@ import { WRONG_THRESHOLD } from './points.js'
 
 // Content columns pulled from the questions table, in schema order. The
 // moderation columns ride along so the client can apply the high-quality filter
-// and (for the admin) build the reported-questions list without a second query.
+// and (for the admin) build the reported-questions list without a second query;
+// created_at rides along so Home can order courses by newest content.
 const QUESTION_COLUMNS =
   'id, course, unit, topic, difficulty, question, options, answer, option_explanations, explanation, ' +
-  'hidden, wrong_count, quality_count'
+  'hidden, wrong_count, quality_count, created_at'
 
 // Fetch the whole db for a user: all shared questions, with this user's answer
 // state and own tag merged onto each, plus the user's reward total and

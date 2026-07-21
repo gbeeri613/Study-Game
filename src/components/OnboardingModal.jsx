@@ -1,62 +1,68 @@
 import { useEffect, useState } from 'react'
 import TagBar from './TagBar.jsx'
-import { IconSparkles } from './Icons.jsx'
+import { IconSparkles, IconX } from './Icons.jsx'
 import { ONBOARDING_REWARD } from '../lib/points.js'
 
-// One-time interactive intro to question tagging, shown on Home (never
-// mid-practice, so it's obvious the demo below operates on a MOCK question —
-// tapping its tags writes nothing anywhere).
+// Two-phase intro to question tagging, shown on Home (never mid-practice, so
+// it's obvious the demo operates on a MOCK question — tapping its tags writes
+// nothing anywhere).
 //
-// The demo embeds the real <TagBar>, not a lookalike, so it can never drift
-// from the control the app actually ships. `tagRewarded` is pinned true so the
-// demo's thank-you never promises +2 points the mock tap doesn't grant.
+// Phase 'intro': the pitch + [הראו לי איך] / [אולי אחר כך]. "Maybe later" and
+// the X just close — no RPC — so the modal auto-appears again on a later
+// visit. Home stops auto-showing it once the user has either finished the
+// demo (onboarded_at set) or tagged a real question on their own.
 //
-// First-time (profile.onboarded_at == null): Complete pays ONBOARDING_REWARD
-// once, Skip (or dismissing the overlay) marks it seen with no points — either
-// way it won't auto-appear again. Re-opened from the account menu it is
-// read-only: same demo, a single close button, no RPC calls, no points.
-const DEMO_QUESTION = {
-  question: 'איזו שיטת מחקר מתאימה ביותר לבחינת קשר סיבתי?',
-  options: ['ניסוי מבוקר', 'מחקר מתאמי', 'תצפית משתתפת'],
-  answer: 0,
-}
+// Phase 'demo': a mock, already-answered question embedding the real
+// <TagBar>. One second in, everything but the tag icons dims and a helper
+// line points at them. סיום stays disabled until the user has tagged, then
+// pays ONBOARDING_REWARD once via complete_tag_onboarding. `tagRewarded` is
+// pinned true so the demo's thank-you never promises a +2 the mock tap
+// doesn't grant. Re-opened from the account menu the flow is identical but
+// read-only: סגירה instead of סיום, no RPCs, no points.
+const DEMO_OPTIONS = ['תשובה 1', 'תשובה 2', 'תשובה 3']
 
 const HEB_LETTERS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו']
 
-export default function OnboardingModal({ firstTime, onComplete, onSkip, onClose }) {
+export default function OnboardingModal({ firstTime, onComplete, onClose }) {
+  const [phase, setPhase] = useState('intro') // intro | demo | done
   // The user's demo tag — local state only, never persisted.
   const [demoTag, setDemoTag] = useState(null)
-  // Once they've tagged (even if later retracted), keep the reinforcement line.
-  const [demoDone, setDemoDone] = useState(false)
-  // Completion affirmation phase: show the +10 thank-you, then auto-close.
-  const [finished, setFinished] = useState(false)
+  // Once they've tagged (even if later retracted), סיום stays enabled.
+  const [tagged, setTagged] = useState(false)
+  // Dims everything but the tag icons until the user tries them.
+  const [spotlight, setSpotlight] = useState(false)
 
+  // Let the demo card land first, then pull focus to the icons.
   useEffect(() => {
-    if (!finished) return
+    if (phase !== 'demo' || tagged) return
+    const t = setTimeout(() => setSpotlight(true), 1000)
+    return () => clearTimeout(t)
+  }, [phase, tagged])
+
+  // Completion affirmation phase: show the +10 thank-you, then auto-close.
+  useEffect(() => {
+    if (phase !== 'done') return
     const t = setTimeout(onClose, 1600)
     return () => clearTimeout(t)
-  }, [finished, onClose])
+  }, [phase, onClose])
 
   function handleDemoTag(tag) {
     setDemoTag(tag)
-    if (tag) setDemoDone(true)
+    if (tag) {
+      setTagged(true)
+      setSpotlight(false)
+    }
   }
 
-  function complete() {
+  function finish() {
     onComplete()
-    setFinished(true)
+    setPhase('done')
   }
 
-  // Dismissing counts as Skip the first time (so it won't nag again); on a
-  // re-open it's just a close.
-  const dismiss = firstTime ? onSkip : onClose
+  const closing = phase === 'done'
 
   return (
-    <div
-      className="modal-overlay"
-      role="presentation"
-      onClick={() => !finished && dismiss()}
-    >
+    <div className="modal-overlay" role="presentation" onClick={() => !closing && onClose()}>
       <div
         className="modal modal-onboarding"
         role="dialog"
@@ -64,7 +70,13 @@ export default function OnboardingModal({ firstTime, onComplete, onSkip, onClose
         aria-labelledby="onboard-title"
         onClick={(e) => e.stopPropagation()}
       >
-        {finished ? (
+        {!closing && (
+          <button className="btn-icon modal-close" aria-label="סגירה" onClick={onClose}>
+            <IconX size={18} />
+          </button>
+        )}
+
+        {phase === 'done' ? (
           <div className="onboard-finish">
             <span className="modal-icon modal-icon-accent">
               <IconSparkles size={26} />
@@ -73,31 +85,46 @@ export default function OnboardingModal({ firstTime, onComplete, onSkip, onClose
               תודה! קיבלתם {ONBOARDING_REWARD} נק׳ 🎉
             </p>
           </div>
-        ) : (
+        ) : phase === 'intro' ? (
           <>
-            <h3 id="onboard-title">עזרו לשפר את מאגר השאלות</h3>
+            <h3 id="onboard-title">חדש - תיוג שאלות לשיפור המאגר</h3>
             <p className="onboard-intro">
-              השאלות נוצרות ע״י בינה מלאכותית ולפעמים יש טעויות. אתם יכולים לתייג
-              את החריגות — לא צריך לתייג כל שאלה.
+              מעכשיו תוכלו לתייג תשובות שאתן חושבים שהן שגויות (לפעמים זה קורה,
+              AI וכו׳), וגם לסמן שאלות טובות במיוחד. התיוגים האלו יעזרו
+              לסטודנטים אחרים - שאלות שגויות יוסתרו וניתן גם לתרגל רק שאלות
+              שסומנו כאיכותיות.
             </p>
 
-            <p className="onboard-prompt">נסו לתייג את השאלה לדוגמה:</p>
+            <div className="modal-actions">
+              {firstTime && (
+                <button className="btn btn-ghost" onClick={onClose}>
+                  אולי אחר כך
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => setPhase('demo')}>
+                הראו לי איך
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 id="onboard-title">חדש - תיוג שאלות לשיפור המאגר</h3>
 
-            {/* A mock, already-answered question card with the REAL tag control
-                in its meta row — exactly where it lives in practice. */}
-            <div className="onboard-demo">
+            <p className={`onboard-helper${spotlight ? ' onboard-helper-on' : ''}`} aria-live="polite">
+              {spotlight && !tagged ? 'כאן מתייגים שאלות. נסו בעצמכם' : ' '}
+            </p>
+
+            <div className={`onboard-demo${spotlight ? ' onboard-spotlight' : ''}`}>
               <div className="question-meta">
                 <span className="chip">שאלה לדוגמה</span>
                 <span className="chip chip-ok">נענתה נכון</span>
                 <TagBar myTag={demoTag} tagRewarded onChange={handleDemoTag} />
               </div>
-              <p className="onboard-demo-q">{DEMO_QUESTION.question}</p>
+              <p className="onboard-demo-q">שאלה</p>
               <ul className="options">
-                {DEMO_QUESTION.options.map((text, i) => (
+                {DEMO_OPTIONS.map((text, i) => (
                   <li key={i}>
-                    <div
-                      className={`option ${i === DEMO_QUESTION.answer ? 'option-correct' : 'option-dim'}`}
-                    >
+                    <div className={`option ${i === 0 ? 'option-correct' : 'option-dim'}`}>
                       <span className="option-letter">{HEB_LETTERS[i]}</span>
                       <span className="option-text">{text}</span>
                     </div>
@@ -106,22 +133,17 @@ export default function OnboardingModal({ firstTime, onComplete, onSkip, onClose
               </ul>
             </div>
 
-            <p className={`onboard-tip${demoDone ? ' onboard-tip-on' : ''}`} aria-live="polite">
-              {demoDone
-                ? 'מעולה! ככה מדווחים. שימו לב: ״שגויה״ = טעות עובדתית, לא שאלה קשה.'
-                : ' '}
-            </p>
+            {tagged && (
+              <p className="onboard-reinforce" aria-live="polite">
+                מעולה! ככה מדווחים. שימו לב: ״שגויה״ = טעות עובדתית, לא שאלה קשה.
+              </p>
+            )}
 
             <div className="modal-actions">
               {firstTime ? (
-                <>
-                  <button className="btn btn-ghost" onClick={onSkip}>
-                    אולי אחר כך
-                  </button>
-                  <button className="btn btn-primary" onClick={complete}>
-                    סיום (+{ONBOARDING_REWARD} נק׳)
-                  </button>
-                </>
+                <button className="btn btn-primary" disabled={!tagged} onClick={finish}>
+                  סיום (+{ONBOARDING_REWARD} נק׳)
+                </button>
               ) : (
                 <button className="btn btn-ghost" onClick={onClose}>
                   סגירה
