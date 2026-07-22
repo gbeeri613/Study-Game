@@ -243,7 +243,7 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
   }
 
   function setMode(mode) {
-    setConfig({ ...config, filterBy: mode, unit: 'all', topic: 'all' })
+    setConfig({ ...config, filterBy: mode, unit: [], topic: 'all' })
   }
 
   const advancedActive =
@@ -266,7 +266,7 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
             <span className="field-label">קורס</span>
             <Select
               value={config.course}
-              onChange={(e) => setConfig({ ...config, course: e.target.value, filterBy: 'all', unit: 'all', topic: 'all' })}
+              onChange={(e) => setConfig({ ...config, course: e.target.value, filterBy: 'all', unit: [], topic: 'all' })}
             >
               {courseValues.map((v) => (
                 <option key={v} value={v}>
@@ -350,14 +350,11 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
 
               {config.filterBy === 'unit' && (
                 <div className="subfilter-select">
-                  <Select value={config.unit} onChange={(e) => setConfig({ ...config, unit: e.target.value })}>
-                    <option value="all">כל היחידות</option>
-                    {subValues.map((v) => (
-                      <option key={v} value={v}>
-                        {optionLabel('unit', v)}
-                      </option>
-                    ))}
-                  </Select>
+                  <PillMultiSelect
+                    options={subValues.map((v) => ({ value: v, label: optionLabel('unit', v) }))}
+                    selected={config.unit}
+                    onChange={(unit) => setConfig({ ...config, unit })}
+                  />
                 </div>
               )}
 

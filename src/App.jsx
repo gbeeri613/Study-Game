@@ -99,7 +99,7 @@ const DEFAULT_CONFIG = {
   state: ['unanswered', 'incorrect'], // multi-select of answer buckets (≥1)
   count: 20, // session goal (slider)
   filterBy: 'all', // advanced: 'all' | 'unit' | 'topic'
-  unit: 'all',
+  unit: [], // multi-select of units; empty = all
   topic: 'all',
   difficulty: [], // advanced multi-select; empty = all
   highQualityOnly: false, // keep only questions the community marked as good
@@ -272,7 +272,7 @@ function StudyApp({ user }) {
       const courses = distinctValues(db.questions, 'course').map(String)
       let course = courseSlug != null && courses.includes(String(courseSlug)) ? courseSlug : c.course
       if (!course || !courses.includes(String(course))) course = courses[0] || ''
-      return { ...c, course, filterBy: 'all', unit: 'all', topic: 'all' }
+      return { ...c, course, filterBy: 'all', unit: [], topic: 'all' }
     })
     navigate('setup')
   }

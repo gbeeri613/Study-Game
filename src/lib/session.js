@@ -33,7 +33,8 @@ function axisValue(q, axis) {
 }
 
 // filters: {
-//   unit, topic -> value | 'all'   (unit compared as string)
+//   topic      -> value | 'all'   (single-select)
+//   unit       -> string[]   (multi-select; empty = all; compared as strings)
 //   course     -> string[]   (multi-select; empty = all)
 //   difficulty -> string[]   (multi-select; empty = all)
 //   state      -> string[]   (multi-select of buckets: 'unanswered' |
@@ -49,13 +50,17 @@ export function applyFilters(questions, filters = {}) {
       return false
     }
 
-    // Single-value axes.
-    for (const axis of ['unit', 'topic']) {
-      const want = filters[axis]
-      if (want && want !== 'all') {
-        // compare as strings so numeric `unit` and dropdown values line up
-        if (String(axisValue(q, axis)) !== String(want)) return false
-      }
+    // Topic: single-value axis.
+    const topic = filters.topic
+    if (topic && topic !== 'all') {
+      if (String(axisValue(q, 'topic')) !== String(topic)) return false
+    }
+
+    // Unit: multi-select. Empty (or missing, or the legacy 'all' string) means
+    // no filter. Compared as strings so numeric `unit` and UI values line up.
+    const units = filters.unit
+    if (Array.isArray(units) && units.length > 0) {
+      if (!units.map(String).includes(String(axisValue(q, 'unit')))) return false
     }
 
     // Course: multi-select. Empty (or missing) means no filter.
@@ -84,7 +89,8 @@ export function applyFilters(questions, filters = {}) {
 // Translate the session-setup `config` (single-course, plus optional advanced
 // axes) into the multi-select filter shape `applyFilters` expects. Course is a
 // single slug here but the filter layer works in arrays, so we wrap it. Only the
-// active sub-filter axis (unit OR topic) is forwarded.
+// active sub-filter axis (unit OR topic) is forwarded. Unit is a multi-select
+// array; topic is a single value.
 export function configToFilters(config) {
   const filters = {
     course: config.course ? [config.course] : [],
