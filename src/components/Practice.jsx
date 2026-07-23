@@ -9,7 +9,7 @@ import {
 } from '../lib/session.js'
 import { courseLabel } from '../data/labels.js'
 import { sessionPoints } from '../lib/points.js'
-import { IconX, IconCheck, IconChevronLeft } from './Icons.jsx'
+import { IconX, IconCheck, IconChevronLeft, IconBan } from './Icons.jsx'
 import TagBar from './TagBar.jsx'
 
 // Hebrew letter prefixes for options (א, ב, ג, ...)
@@ -49,6 +49,9 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
   const [idx, setIdx] = useState(0)
   const [selectedSlot, setSelectedSlot] = useState(null)
   const [attempted, setAttempted] = useState(false)
+  // Options the user has ruled out for the current question, by ORIGINAL index
+  // (stable across the per-question shuffle). Reset when moving on.
+  const [ruledOut, setRuledOut] = useState(() => new Set())
 
   const item = session[idx]
   // Live question (state may have been updated by a prior answer this session).
@@ -112,6 +115,7 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
     setIdx((i) => i + 1)
     setSelectedSlot(null)
     setAttempted(false)
+    setRuledOut(new Set())
   }
 
   // Tagging is optional and never touches answer state. `next` is a tag value,
@@ -127,6 +131,7 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
   function pick(displaySlot) {
     if (pickedCorrect) return // solved — options are locked
     const originalIndex = displayToOriginal(item, displaySlot)
+    if (ruledOut.has(originalIndex)) return // ruled out — not selectable
     const correct = originalIndex === liveQuestion.answer
     setSelectedSlot(displaySlot)
     // Only the first attempt is recorded — later picks never overwrite it.
@@ -134,6 +139,26 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
       setAttempted(true)
       outcomesRef.current.push({ id: liveQuestion.id, correct, prev: prevBucket(item.question) })
       dispatch({ type: 'RECORD_ANSWER', id: liveQuestion.id, choice: originalIndex, correct })
+    }
+  }
+
+  // Toggle "rule out" on an option (by original index). Ruling out a picked
+  // option drops the selection so it can't stay marked as your (wrong) choice.
+  function toggleRuleOut(originalIndex) {
+    if (pickedCorrect) return // solved — nothing to rule out
+    const willRuleOut = !ruledOut.has(originalIndex)
+    setRuledOut((prev) => {
+      const next = new Set(prev)
+      if (willRuleOut) next.add(originalIndex)
+      else next.delete(originalIndex)
+      return next
+    })
+    if (
+      willRuleOut &&
+      selectedSlot != null &&
+      displayToOriginal(item, selectedSlot) === originalIndex
+    ) {
+      setSelectedSlot(null)
     }
   }
 
@@ -160,7 +185,7 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item, selectedSlot, attempted, liveQuestion, idx, atEnd])
+  }, [item, selectedSlot, attempted, liveQuestion, idx, atEnd, ruledOut])
 
   if (session.length === 0) {
     return (
@@ -225,37 +250,61 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
             const text = liveQuestion.options[originalIndex]
             const isCorrect = originalIndex === liveQuestion.answer
             const isYourPick = displaySlot === selectedSlot
+            const isRuledOut = ruledOut.has(originalIndex)
             let cls = 'option'
+            if (!pickedCorrect) cls += ' option-rule-room'
             if (pickedCorrect) {
               // Solved: reveal the (chosen) correct option, dim the rest.
               if (isCorrect) cls += ' option-correct'
               else cls += ' option-dim'
+            } else if (isRuledOut) {
+              // Ruled out: faded + struck through, and not selectable.
+              cls += ' option-ruled-out'
             } else if (isYourPick) {
               // Wrong pick: mark only your choice — never reveal the answer.
               cls += ' option-wrong'
             }
             return (
-              <li key={originalIndex}>
-                <button
-                  className={cls}
-                  onClick={() => pick(displaySlot)}
-                  disabled={pickedCorrect}
-                >
-                  <span className="option-letter">
-                    {HEB_LETTERS[displaySlot] || displaySlot + 1}
-                  </span>
-                  <span className="option-text">{text}</span>
-                  {pickedCorrect && isCorrect && (
-                    <span className="mark">
-                      <IconCheck size={20} />
-                    </span>
+              <li key={originalIndex} className="option-item">
+                {/* The rule-out button is absolutely positioned within this row
+                    only, so it centers on the option button — not on the row +
+                    explanation, which would drop the icon to the bottom. */}
+                <div className="option-row">
+                  {!pickedCorrect && (
+                    <button
+                      type="button"
+                      className={`rule-out-btn${isRuledOut ? ' is-active' : ''}`}
+                      onClick={() => toggleRuleOut(originalIndex)}
+                      aria-pressed={isRuledOut}
+                      aria-label={isRuledOut ? 'בטל פסילת תשובה' : 'פסול תשובה'}
+                      title={isRuledOut ? 'בטל פסילה' : 'פסול תשובה'}
+                    >
+                      <span className="rule-out-ic">
+                        <IconBan size={18} />
+                      </span>
+                    </button>
                   )}
-                  {!pickedCorrect && isYourPick && (
-                    <span className="mark">
-                      <IconX size={20} />
+                  <button
+                    className={cls}
+                    onClick={() => pick(displaySlot)}
+                    disabled={pickedCorrect || isRuledOut}
+                  >
+                    <span className="option-letter">
+                      {HEB_LETTERS[displaySlot] || displaySlot + 1}
                     </span>
-                  )}
-                </button>
+                    <span className="option-text">{text}</span>
+                    {pickedCorrect && isCorrect && (
+                      <span className="mark">
+                        <IconCheck size={20} />
+                      </span>
+                    )}
+                    {!pickedCorrect && isYourPick && (
+                      <span className="mark">
+                        <IconX size={20} />
+                      </span>
+                    )}
+                  </button>
+                </div>
                 {/* Explanation for the currently selected option: the correct
                     one once solved, or the wrong one you just tried. */}
                 {hasExpl && isYourPick && (
