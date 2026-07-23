@@ -956,6 +956,49 @@ button {
 
 .option-dim { opacity: 0.42; }
 
+/* Rule-out: a ruled-out option is faded, struck through, and locked. */
+/* Relative wrapper around just the option button (not the explanation below),
+   so the absolutely-positioned rule-out button centers on the option row. */
+.option-row { position: relative; }
+/* Reserve room on the physical left (RTL end) so the answer text never runs
+   under the absolutely-positioned rule-out button. Only while un-solved. */
+.option-rule-room { padding-left: 56px; }
+.option-ruled-out { opacity: 0.5; }
+.option-ruled-out .option-text { text-decoration: line-through; text-decoration-thickness: 2px; }
+.option-ruled-out .option-letter { text-decoration: line-through; }
+
+/* Big invisible hit target pinned to the physical left, so tapping "rule out"
+   can't accidentally land on the answer. The button box is absolute, so its
+   generous size never grows the row height. */
+.rule-out-btn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+}
+.rule-out-ic {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--muted);
+  transition: background var(--dur-1), color var(--dur-1), transform var(--dur-1) var(--ease-out);
+}
+.rule-out-btn:hover .rule-out-ic { background: var(--surface-2); color: var(--text); }
+.rule-out-btn:active .rule-out-ic { transform: scale(0.9); }
+.rule-out-btn.is-active .rule-out-ic { background: rgba(255, 118, 118, 0.16); color: var(--bad); }
+
 /* Inline option explanations */
 .opt-expl {
   margin: 8px 0 2px;
