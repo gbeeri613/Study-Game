@@ -224,7 +224,7 @@ export default function Practice({ db, dispatch, config, overrideQuestionIds, on
       <div className="card question-card" key={liveQuestion.id}>
         <div className="question-meta">
           {liveQuestion.course != null && (
-            <span className="chip">{courseLabel(liveQuestion.course)}</span>
+            <span className="chip">{courseLabel(liveQuestion.course, db.courses)}</span>
           )}
           {liveQuestion.answered_at && (
             <span className={`chip ${liveQuestion.correct ? 'chip-ok' : 'chip-bad'}`}>

@@ -105,8 +105,13 @@ export default function Summary({ result, db, onHome, onAgain, onReview }) {
       if (q.answered_at != null) done += 1
     }
     if (total === 0) return null
-    return { total, done, pct: Math.round((done / total) * 100), label: courseLabel(slug) }
-  }, [db.questions, config])
+    return {
+      total,
+      done,
+      pct: Math.round((done / total) * 100),
+      label: courseLabel(slug, db.courses),
+    }
+  }, [db.questions, db.courses, config])
 
   return (
     <div className="card summary-card">

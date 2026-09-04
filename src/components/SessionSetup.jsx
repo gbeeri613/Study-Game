@@ -270,7 +270,7 @@ export default function SessionSetup({ db, config, setConfig, onStart, onCancel 
             >
               {courseValues.map((v) => (
                 <option key={v} value={v}>
-                  {courseLabel(v)}
+                  {courseLabel(v, db.courses)}
                 </option>
               ))}
             </Select>

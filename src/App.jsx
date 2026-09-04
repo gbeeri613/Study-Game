@@ -10,7 +10,8 @@ import {
   claimOnboarding,
   dismissOnboarding,
 } from './lib/api.js'
-import { distinctValues } from './lib/session.js'
+import { distinctValues, activeQuestions } from './lib/session.js'
+import { SEMESTERS, newestSemester } from './data/semesters.js'
 import { TAG_REWARD, ONBOARDING_REWARD } from './lib/points.js'
 import { useAuth, isAdmin } from './lib/useAuth.js'
 import Home from './components/Home.jsx'
@@ -20,6 +21,36 @@ import Summary from './components/Summary.jsx'
 import ImportExport from './components/ImportExport.jsx'
 import Login from './components/Login.jsx'
 import { IconCap, IconSparkles, IconAlert, IconChevronRight } from './components/Icons.jsx'
+
+// ---- semester resolution ---------------------------------------------------
+// Which semester Home opens on. The admin sets an app-wide default, but a
+// default pointing at a semester with no content yet is deliberately a no-op:
+// the new semester can be armed in advance and takes effect by itself the
+// moment its first course is imported.
+//
+//   1. the admin's default, if it actually has questions;
+//   2. otherwise the newest semester that does;
+//   3. otherwise null — the bank is empty everywhere.
+//
+// "Has questions" is measured over activeQuestions(), the same set Home's
+// donuts count, so the selector can never offer a semester whose cards would
+// all be empty — and the admin (who alone receives hidden rows) sees exactly
+// what students see.
+export function semestersWithContent(db) {
+  const bySlug = new Map((db.courses ?? []).map((c) => [c.slug, c.semester]))
+  const found = new Set()
+  for (const q of activeQuestions(db.questions)) {
+    const semester = bySlug.get(q.course)
+    if (semester) found.add(semester)
+  }
+  return SEMESTERS.filter((s) => found.has(s))
+}
+
+export function resolveSemester(db) {
+  const available = semestersWithContent(db)
+  if (available.includes(db.default_semester)) return db.default_semester
+  return newestSemester(available)
+}
 
 // ---- db reducer ------------------------------------------------------------
 // Single source of truth for the whole database. Every action returns a NEW db
@@ -141,6 +172,11 @@ function StudyApp({ user }) {
   const [status, setStatus] = useState('loading')
   const [loadError, setLoadError] = useState(null)
 
+  // The semester Home is showing. Resolved from the db each time it loads (see
+  // resolveSemester); deliberately NOT persisted per user — the admin's default
+  // is meant to move everyone at the start of a new semester.
+  const [semester, setSemester] = useState(null)
+
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   // Non-null while running a fixed set of questions (mistakes review).
   const [reviewIds, setReviewIds] = useState(null)
@@ -156,13 +192,17 @@ function StudyApp({ user }) {
       .then((remote) => {
         if (!active) return
         dispatch({ type: 'SET_DB', db: remote })
+        setSemester(resolveSemester(remote))
         saveDb(remote)
         setStatus('ready')
       })
       .catch((err) => {
         if (!active) return
         const cached = loadDb()
-        if (cached) dispatch({ type: 'SET_DB', db: cached })
+        if (cached) {
+          dispatch({ type: 'SET_DB', db: cached })
+          setSemester(resolveSemester(cached))
+        }
         setLoadError(err.message || String(err))
         setStatus(cached ? 'ready' : 'error')
       })
@@ -217,6 +257,12 @@ function StudyApp({ user }) {
   const refresh = useCallback(async () => {
     const remote = await fetchRemoteDb(user.id)
     dispatch({ type: 'SET_DB', db: remote })
+    // An admin action can empty the semester being viewed (deleting its last
+    // course) or create the first one in another. Keep the current pick while
+    // it still holds content; otherwise fall back to the resolver.
+    setSemester((current) =>
+      semestersWithContent(remote).includes(current) ? current : resolveSemester(remote),
+    )
     saveDb(remote)
   }, [user.id])
 
@@ -271,7 +317,15 @@ function StudyApp({ user }) {
     setConfig((c) => {
       const courses = distinctValues(db.questions, 'course').map(String)
       let course = courseSlug != null && courses.includes(String(courseSlug)) ? courseSlug : c.course
-      if (!course || !courses.includes(String(course))) course = courses[0] || ''
+      if (!course || !courses.includes(String(course))) {
+        // Repair path: fall back to a course in the semester currently on
+        // screen, so cancelling out of setup and reopening it doesn't silently
+        // land on some other semester's course.
+        const inSemester = (db.courses ?? [])
+          .filter((row) => row.semester === semester)
+          .map((row) => String(row.slug))
+        course = courses.find((slug) => inSemester.includes(slug)) || courses[0] || ''
+      }
       return { ...c, course, filterBy: 'all', unit: [], topic: 'all' }
     })
     navigate('setup')
@@ -366,6 +420,9 @@ function StudyApp({ user }) {
         db={db}
         user={user}
         admin={admin}
+        semester={semester}
+        semesters={semestersWithContent(db)}
+        onSelectSemester={setSemester}
         dispatch={persistDispatch}
         onStart={openSetup}
         onOpenAdmin={() => navigate('admin')}
