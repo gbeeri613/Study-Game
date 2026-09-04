@@ -13,6 +13,11 @@ Back button walks back through the app (setup → home, etc.) instead of exiting
 
 - **Google sign-in**, one shared question bank, per-user answer state synced
   via Supabase (Row Level Security keeps every user's rows their own).
+- **Semesters:** every course belongs to one semester, and Home has a semester
+  switcher listing the ones that have questions. The admin picks which semester
+  everyone lands on at page load. Filtering, practice and the leaderboard are
+  unaffected — a course slug is unique across semesters, so only Home needs to
+  know. See [`SCHEMA.md`](SCHEMA.md#courses--semesters).
 - Filter by course/subject, unit, topic, difficulty, and state (unanswered /
   answered / incorrect / correct) — filter values are derived from the data.
 - Answer flow reveals correct vs. your pick and surfaces the per-option
@@ -27,8 +32,11 @@ Back button walks back through the app (setup → home, etc.) instead of exiting
   filters to community-endorsed questions. A one-time interactive intro on Home
   teaches the control (+10 points). See
   [`docs/PRD-question-feedback.md`](docs/PRD-question-feedback.md).
-- **Admin tools** (Manage tab): import/export the bank as JSON, delete by
-  course, and a moderation card listing reported questions with restore/delete.
+- **Admin tools** (Manage tab): import/export the bank as JSON, manage courses
+  (create one during import by naming it and picking its semester; later rename,
+  move between semesters, or delete it with its questions), set the app-wide
+  default semester, and a moderation card listing reported questions with
+  restore/delete.
 - Keyboard on desktop: number keys pick an option, Enter/Space advances, arrow
   keys move between questions.
 

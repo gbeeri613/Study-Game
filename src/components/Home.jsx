@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconCap, IconArrowLeft, IconSettings, IconLogOut, IconStar } from './Icons.jsx'
 import OnboardingModal from './OnboardingModal.jsx'
 import { courseLabel } from '../data/labels.js'
+import { semesterLabel } from '../data/semesters.js'
 import { NONE_VALUE, activeQuestions } from '../lib/session.js'
 import { grandTotal } from '../lib/points.js'
 import { fetchLeaderboard } from '../lib/api.js'
@@ -14,8 +15,35 @@ const SEG = {
   unanswered: '#7b818f',
 }
 
-function courseName(slug) {
-  return slug === NONE_VALUE ? 'ללא קורס' : courseLabel(slug)
+function courseName(slug, courses) {
+  return slug === NONE_VALUE ? 'ללא קורס' : courseLabel(slug, courses)
+}
+
+// The semester switcher. A horizontal chip row rather than a segmented control
+// so it survives growing to six semesters, and scrollable rather than wrapping
+// so it never pushes the course grid down a line.
+//
+// Rendered only when there's an actual choice to make — with one semester of
+// content (which is every day of the app's life until now) a one-option
+// selector is pure noise.
+function SemesterBar({ semesters, selected, onSelect }) {
+  if (semesters.length < 2) return null
+  return (
+    <div className="semester-bar" role="tablist" aria-label="סמסטר">
+      {[...semesters].reverse().map((s) => (
+        <button
+          key={s}
+          type="button"
+          role="tab"
+          aria-selected={s === selected}
+          className={`chip-toggle ${s === selected ? 'chip-toggle-active' : ''}`}
+          onClick={() => onSelect(s)}
+        >
+          {semesterLabel(s)}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function AccountMenu({ user, onOpenOnboarding }) {
@@ -127,10 +155,10 @@ function CourseDonut({ correct, incorrect, unanswered, total }) {
   )
 }
 
-function CourseCard({ course, onStart }) {
+function CourseCard({ course, courses, onStart }) {
   return (
     <div className="course-card">
-      <div className="course-card-title">{courseName(course.slug)}</div>
+      <div className="course-card-title">{courseName(course.slug, courses)}</div>
       <CourseDonut
         correct={course.correct}
         incorrect={course.incorrect}
@@ -289,14 +317,34 @@ function RankStat({ label, rank }) {
   )
 }
 
-export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }) {
-  // Per-course tallies of correct / incorrect / unanswered. Hidden questions
-  // are excluded so the counts match what a session can actually serve up
-  // (only the admin ever receives hidden rows in the first place).
+export default function Home({
+  db,
+  user,
+  admin,
+  semester,
+  semesters,
+  onSelectSemester,
+  dispatch,
+  onStart,
+  onOpenAdmin,
+}) {
+  const courseRegistry = db.courses ?? []
+
+  // Per-course tallies of correct / incorrect / unanswered, for the selected
+  // semester only. Hidden questions are excluded so the counts match what a
+  // session can actually serve up (only the admin ever receives hidden rows in
+  // the first place).
+  //
+  // A question's semester comes from its COURSE, never from the question — so
+  // questions with no course belong to no semester and are shown under every
+  // one, which is the only sensible place to put them.
   const courses = useMemo(() => {
+    const semesterBySlug = new Map(courseRegistry.map((c) => [c.slug, c.semester]))
     const map = new Map()
     for (const q of activeQuestions(db.questions)) {
-      const slug = q.course == null || q.course === '' ? NONE_VALUE : q.course
+      const uncoursed = q.course == null || q.course === ''
+      if (!uncoursed && semesterBySlug.get(q.course) !== semester) continue
+      const slug = uncoursed ? NONE_VALUE : q.course
       if (!map.has(slug))
         map.set(slug, { slug, total: 0, correct: 0, incorrect: 0, unanswered: 0, newest: 0 })
       const row = map.get(slug)
@@ -311,9 +359,13 @@ export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }
     }
     return [...map.values()].sort(
       (a, b) =>
-        b.newest - a.newest || courseName(a.slug).localeCompare(courseName(b.slug), 'he'),
+        b.newest - a.newest ||
+        courseName(a.slug, courseRegistry).localeCompare(
+          courseName(b.slug, courseRegistry),
+          'he',
+        ),
     )
-  }, [db.questions])
+  }, [db.questions, courseRegistry, semester])
 
   const name = firstName(user)
   // Total points computed locally — answer state plus the rewards ledger, the
@@ -372,9 +424,16 @@ export default function Home({ db, user, admin, dispatch, onStart, onOpenAdmin }
         </div>
       </section>
 
+      <SemesterBar semesters={semesters} selected={semester} onSelect={onSelectSemester} />
+
       <div className="course-grid">
         {courses.map((c) => (
-          <CourseCard key={c.slug ?? '__none__'} course={c} onStart={onStart} />
+          <CourseCard
+            key={c.slug ?? '__none__'}
+            course={c}
+            courses={courseRegistry}
+            onStart={onStart}
+          />
         ))}
       </div>
 

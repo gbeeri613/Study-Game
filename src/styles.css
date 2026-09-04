@@ -494,7 +494,15 @@ button {
   margin-bottom: 14px;
   box-shadow: var(--shadow-1);
 }
-.card h2 { margin: 0 0 14px; font-size: 18px; font-weight: 700; }
+.card h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card h2 svg { color: var(--muted); flex: 0 0 auto; }
 .card h3 { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
 
 .muted { color: var(--muted); font-size: 14px; }
@@ -1984,6 +1992,148 @@ details summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; font-si
 @keyframes confettiBurst {
   0% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
   100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(var(--rot)); }
+}
+
+/* ---- Semesters ---------------------------------------------------------------------------------- */
+
+/* Home's semester switcher. Scrolls rather than wraps so it stays one line at
+   six semesters, and the scrollbar is hidden because the chips themselves are
+   the affordance. */
+.semester-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  /* Room for the chips' focus ring and :active scale, which would otherwise be
+     clipped by the scroll container. */
+  padding: 2px;
+  margin-inline: -2px;
+}
+.semester-bar::-webkit-scrollbar { display: none; }
+.semester-bar .chip-toggle { flex: 0 0 auto; }
+
+/* ---- Manage: shared text input ------------------------------------------------------------------ */
+
+.text-input {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color var(--dur-1), background var(--dur-1);
+}
+.text-input:hover { border-color: var(--border-strong); }
+.text-input:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.55); }
+.text-input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* ---- Manage: the courses an import would touch --------------------------------------------------- */
+
+.import-courses { margin-top: 16px; }
+.import-course-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.import-course {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 13.5px;
+}
+/* A course that already exists is settled — it renders as one quiet line. */
+.import-course-known {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--text-2);
+}
+.import-course-name { font-weight: 600; color: var(--text-1); }
+.import-course-count { color: var(--text-3); margin-inline-start: auto; }
+
+/* A course being created needs input, so it's tinted to pull the eye. */
+.import-course-new {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+.import-course-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.import-course-slug {
+  font-size: 12px;
+  color: var(--text-3);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.import-course-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.badge-new {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.import-course-hint { margin-top: 10px; font-size: 12.5px; }
+
+/* ---- Manage: the course registry ----------------------------------------------------------------- */
+
+.course-admin-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.course-admin-group {
+  margin: 16px 0 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+}
+.course-admin-list > li:first-child .course-admin-group { margin-top: 0; }
+.course-admin-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.course-admin-main { flex: 1 1 200px; min-width: 0; }
+.course-admin-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.course-admin-meta code { direction: ltr; unicode-bidi: isolate; }
+.course-admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.course-admin-actions .select-wrap { min-width: 120px; }
+
+@media (min-width: 560px) {
+  .import-course-fields { grid-template-columns: 1fr 160px; }
 }
 
 /* ---- Responsive --------------------------------------------------------------------------------- */

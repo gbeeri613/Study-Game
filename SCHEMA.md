@@ -1,6 +1,6 @@
 # Data Schema — the contract
 
-The app is backed by **Supabase (Postgres)**. There are five tables:
+The app is backed by **Supabase (Postgres)**. There are seven tables:
 
 - **`questions`** — the shared question store. Everyone signed in can read it;
   only the admin can write it. This holds the question **content**, plus the
@@ -16,6 +16,13 @@ The app is backed by **Supabase (Postgres)**. There are five tables:
 - **`question_feedback`** — one tag per (user, question): `'wrong'` or
   `'quality'`. Each user reads/writes only their own rows; nobody ever sees
   anyone else's tags, only the aggregate counters on `questions`.
+- **`courses`** — the course registry, one row per course slug carrying its
+  Hebrew `label` and the `semester` it belongs to (`0006_semesters.sql`).
+  Everyone signed in reads it; only the admin writes. `questions.course` is a
+  foreign key into it, so a question can never carry a slug with no course row.
+- **`app_settings`** — admin-controlled, app-wide key/value settings
+  (`0006_semesters.sql`). Currently one key, `default_semester`. Read by all,
+  written by the admin only.
 - **`rewards`** — an **append-only point ledger** written exclusively by the
   database (a trigger and the onboarding RPC — clients have **no write policy
   at all**). Rows are `kind='tag'` (+2, at most one per question, enforced by a
@@ -36,6 +43,49 @@ The app is backed by **Supabase (Postgres)**. There are five tables:
 The `leaderboard(period)` SQL function (`'all'` | `'daily'`, daily = today in
 Israel local time) aggregates both parts across all users for the Home board; a
 reward counts toward the daily board on the day it was created.
+
+## Courses & semesters
+
+**A semester belongs to a course, never to a question.** `courses` maps a slug
+to one `semester`, and every question reaches its semester through its course.
+Two consequences follow, and the whole design rests on them:
+
+- **A course slug belongs to exactly one semester.** A course that runs again
+  next semester is a *new course* with a new slug (`psychology-263`), its own
+  Hebrew label, and its own progress donut. Slugs can therefore never collide
+  across semesters.
+- **Because they can't collide, only Home needs to know about semesters.**
+  Session setup, the practice pool, `applyFilters` and the summary all filter by
+  course slug alone, exactly as they did before semesters existed, and cannot
+  accidentally mix two of them.
+
+Questions with `course = null` belong to no course and therefore to no
+semester; Home shows them under every semester, which is the only sensible
+place to put them. (The migration normalizes `course = ''` to `null` so this is
+one case rather than two.)
+
+The semester the app opens on is `app_settings.default_semester`, resolved at
+load time by `resolveSemester()` in `src/App.jsx`:
+
+1. the admin's default, **if that semester actually has questions**;
+2. otherwise the newest semester that does;
+3. otherwise nothing — the bank is empty.
+
+Step 1's condition is deliberate: it lets the admin arm the next semester
+*before* uploading anything, with no effect until the first course lands in it,
+at which point every user moves over on their next load. The Home selector
+lists only semesters with content for the same reason, so a future semester
+declared in `src/data/semesters.js` stays invisible until it has questions.
+
+**Adding a semester:** add one line to `SEMESTERS` in
+[`src/data/semesters.js`](src/data/semesters.js). There is no check constraint
+on `courses.semester`, so no migration is needed.
+
+**Adding a course:** import a JSON whose questions carry the new slug. The
+admin import screen detects the unknown slug and asks for a Hebrew name and a
+semester (prefilled with the current default), creating the course row before
+writing the questions. An *existing* course keeps its semester — re-importing a
+fix never moves questions between semesters.
 
 ## Question feedback & moderation
 
@@ -67,7 +117,7 @@ At load time the app fetches both and **merges** them into one in-memory object
 of the shape below, so the rest of the app sees the same `question` objects it
 always did (content fields + the three state fields). Answer-state now syncs
 automatically per signed-in user across devices — there is no more
-export/import-to-sync step. `schema_version` is currently `1`.
+export/import-to-sync step. `schema_version` is currently `2`.
 
 The same object shape is still the **import/backup format**: an admin imports a
 JSON array of question objects (or a `{ questions: [...] }` object) to add or
@@ -76,8 +126,11 @@ JSON backup. See [Import behavior](#import-behavior) below.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "exported_at": "2026-07-02T10:30:00Z",
+  "courses": [
+    { "slug": "sociology", "label": "סוציולוגיה", "semester": "26-2" }
+  ],
   "questions": [
     {
       "id": "soc-u05-a1b2",
@@ -105,8 +158,9 @@ JSON backup. See [Import behavior](#import-behavior) below.
 
 | Field | Type | Notes |
 |---|---|---|
-| `schema_version` | number | Currently `1`. Import warns (does not fail) on a mismatch. |
+| `schema_version` | number | Currently `2` (was `1` before courses became first-class). Import warns (does not fail) on a mismatch. |
 | `exported_at` | string (ISO 8601) | Refreshed automatically on every export. |
+| `courses` | array | `{ slug, label, semester }` rows. Present in exports; **ignored on import** — courses are created through the import screen's picker, not from the file. |
 | `questions` | array | The question objects below. |
 
 ## Question — content fields (produced by generation chats)
@@ -114,7 +168,7 @@ JSON backup. See [Import behavior](#import-behavior) below.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string | **yes** | Globally unique and stable. All answer-state keys off it. |
-| `course` | string | no | **The subject.** Machine slug (see below). Missing → grouped as "ללא". |
+| `course` | string | no | **The subject.** Machine slug (see below), and a foreign key into `courses`. Missing → grouped as "ללא קורס", and shown under every semester. |
 | `unit` | number | no | Filter axis. Missing → "ללא". |
 | `topic` | string | no | Filter axis. Missing → "ללא". |
 | `difficulty` | string | no | `easy` / `medium` / `hard` (free text tolerated). |
@@ -168,24 +222,24 @@ database's Row Level Security rejects writes to `questions` from anyone else).
 
 ## Subjects (the `course` field)
 
-`course` is a lowercase machine **slug**. The app never hardcodes which subjects
-exist — it derives the subject list from whatever slugs appear in your JSON, so
-next semester's courses "just work". Slugs get nicer Hebrew labels from a small
-map; an unknown slug simply shows its raw slug until you add a label.
+`course` is a lowercase machine **slug** and a foreign key into `courses`,
+which holds its Hebrew label and its semester. The app still hardcodes no
+subject list — it reads whatever rows are in `courses` — but the names now live
+in the database rather than in a code map.
 
-Current slugs → Hebrew label:
+Slugs seeded at 26-2 by `0006_semesters.sql`: `anthropology`, `sociology`,
+`psychology`, `economy`, `rome`.
 
-| slug | label |
-|---|---|
-| `anthropology` | אנתרופולוגיה |
-| `sociology` | סוציולוגיה |
-| `psychology` | פסיכולוגיה |
-| `economy` | כלכלה |
-| `rome` | רומא |
+**To add a course:** import a JSON carrying the new slug. The admin import
+screen spots the unknown slug and asks for a Hebrew name and a semester before
+writing anything. Nothing in the code changes.
 
-**To add a subject label for a future semester:** add one line to
-`COURSE_LABELS` in [`src/data/labels.js`](src/data/labels.js). No other change
-is needed — filters and stats populate from the data automatically.
+**Pick a fresh slug for a repeat course.** A slug maps to exactly one semester,
+so sociology running again in 26-3 needs its own slug (`sociology-263`) — it is
+a separate course with a separate card and separate progress.
+
+`COURSE_LABELS` in [`src/data/labels.js`](src/data/labels.js) survives only as
+a fallback for a slug whose course row is missing. Do not add to it.
 
 ---
 
@@ -225,6 +279,8 @@ is needed — filters and stats populate from the data automatically.
 >   never collide across separate generation batches.
 > - Do **not** include the state fields (`answered_at`, `last_choice`,
 >   `correct`) — the app adds those.
+> - Do **not** include a `semester` field. A semester belongs to the course,
+>   not to a question, and is chosen in the admin import screen.
 >
 > Generate <N> questions on <topic/unit>. Return only the JSON array.
 

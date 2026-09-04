@@ -3,7 +3,7 @@
 // the same in-memory db shape the rest of the app already understands.
 
 import { supabase } from './supabase.js'
-import { SCHEMA_VERSION, loadDb } from './storage.js'
+import { SCHEMA_VERSION, loadDb, saveDb } from './storage.js'
 import { PREVIEW_USER_ID } from './useAuth.js'
 import { WRONG_THRESHOLD } from './points.js'
 
@@ -11,9 +11,15 @@ import { WRONG_THRESHOLD } from './points.js'
 // moderation columns ride along so the client can apply the high-quality filter
 // and (for the admin) build the reported-questions list without a second query;
 // created_at rides along so Home can order courses by newest content.
+//
+// Note what is NOT here: a semester. Semester lives on the course row, never on
+// a question — see supabase/migrations/0006_semesters.sql.
 const QUESTION_COLUMNS =
   'id, course, unit, topic, difficulty, question, options, answer, option_explanations, explanation, ' +
   'hidden, wrong_count, quality_count, created_at'
+
+// The app_settings row holding the semester every user's Home lands on.
+export const DEFAULT_SEMESTER_KEY = 'default_semester'
 
 // Fetch the whole db for a user: all shared questions, with this user's answer
 // state and own tag merged onto each, plus the user's reward total and
@@ -31,7 +37,7 @@ export async function fetchRemoteDb(userId) {
     throw new Error('preview mode: no cached db in localStorage')
   }
 
-  const [qRes, aRes, fRes, rRes, pRes] = await Promise.all([
+  const [qRes, aRes, fRes, rRes, pRes, cRes, sRes] = await Promise.all([
     supabase.from('questions').select(QUESTION_COLUMNS),
     supabase
       .from('user_answers')
@@ -40,6 +46,12 @@ export async function fetchRemoteDb(userId) {
     supabase.from('question_feedback').select('question_id, tag').eq('user_id', userId),
     supabase.from('rewards').select('kind, question_id, points').eq('user_id', userId),
     supabase.from('profiles').select('onboarded_at').eq('id', userId).maybeSingle(),
+    supabase.from('courses').select('slug, label, semester'),
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', DEFAULT_SEMESTER_KEY)
+      .maybeSingle(),
   ])
 
   if (qRes.error) throw qRes.error
@@ -47,6 +59,8 @@ export async function fetchRemoteDb(userId) {
   if (fRes.error) throw fRes.error
   if (rRes.error) throw rRes.error
   if (pRes.error) throw pRes.error
+  if (cRes.error) throw cRes.error
+  if (sRes.error) throw sRes.error
 
   const answersById = new Map((aRes.data ?? []).map((a) => [a.question_id, a]))
   const tagsById = new Map((fRes.data ?? []).map((f) => [f.question_id, f.tag]))
@@ -75,6 +89,10 @@ export async function fetchRemoteDb(userId) {
     schema_version: SCHEMA_VERSION,
     exported_at: new Date().toISOString(),
     questions,
+    // The course registry: slug -> Hebrew label + semester. Shared, admin-owned,
+    // and the only place a semester is recorded (questions never carry one).
+    courses: cRes.data ?? [],
+    default_semester: sRes.data?.value ?? null,
     rewards_total: rewardsTotal,
     onboarded_at: pRes.data?.onboarded_at ?? null,
   }
@@ -108,6 +126,8 @@ function synthPreviewFields(db) {
   return {
     ...db,
     questions,
+    courses: db.courses ?? [],
+    default_semester: db.default_semester ?? null,
     rewards_total: db.rewards_total ?? 0,
     onboarded_at: db.onboarded_at ?? null,
   }
@@ -149,6 +169,25 @@ function previewMode() {
   return (
     import.meta.env.DEV && new URLSearchParams(window.location.search).has('preview')
   )
+}
+
+// Apply an admin write to the localStorage cache that fetchRemoteDb serves in
+// `?preview` mode, so the admin screen actually works without a backend.
+//
+// A bare `return` guard is enough for answer state and tags, because those are
+// applied optimistically to the reducer's db and only *mirrored* to the server.
+// The course-registry and settings writes below have no such local path — the
+// screen is re-rendered from whatever fetchRemoteDb returns next, which in
+// preview IS this cache. Without writing to it, every one of them would appear
+// to succeed and then silently revert.
+//
+// Dev-only; `previewMode()` is statically false in production builds, so this
+// is stripped along with them.
+function previewMutateDb(mutate) {
+  const cached = loadDb()
+  if (!cached) throw new Error('preview mode: no cached db in localStorage')
+  mutate(cached)
+  saveDb(cached)
 }
 
 // Attach (or switch to) a tag on a question. `tag` is 'wrong' | 'quality'.
@@ -328,4 +367,89 @@ export async function deleteQuestions(ids) {
     deleted += slice.length
   }
   return deleted
+}
+
+// ---- Admin: the course registry + app settings ----------------------------
+// Same trust model as the question store: RLS lets only the admin succeed, so
+// these are convenience wrappers, not the guard.
+
+// Insert-or-update course rows by slug. Used both when an import introduces new
+// courses and when the admin renames one or moves it to another semester.
+// Rows are { slug, label, semester }.
+export async function upsertCourses(courses) {
+  if (!courses.length) return 0
+  const rows = courses.map((c) => ({
+    slug: c.slug,
+    label: c.label,
+    semester: c.semester,
+    updated_at: new Date().toISOString(),
+  }))
+
+  if (previewMode()) {
+    previewMutateDb((db) => {
+      if (!Array.isArray(db.courses)) db.courses = []
+      for (const row of rows) {
+        const existing = db.courses.find((c) => c.slug === row.slug)
+        if (existing) Object.assign(existing, row)
+        else db.courses.push(row)
+      }
+    })
+    return rows.length
+  }
+
+  const { error } = await supabase.from('courses').upsert(rows, { onConflict: 'slug' })
+  if (error) throw error
+  return rows.length
+}
+
+// Permanently delete a course and everything in it. The order is forced by the
+// foreign key: questions reference the course row, and the constraint has no ON
+// DELETE rule precisely so that deleting a course out from under its questions
+// fails loudly instead of orphaning them. Answer state, tags and tag rewards
+// for those questions cascade away with the questions themselves.
+export async function deleteCourse(slug) {
+  if (previewMode()) {
+    let removed = 0
+    previewMutateDb((db) => {
+      removed = db.questions.filter((q) => q.course === slug).length
+      db.questions = db.questions.filter((q) => q.course !== slug)
+      db.courses = (db.courses ?? []).filter((c) => c.slug !== slug)
+    })
+    return removed
+  }
+
+  const { data, error: selErr } = await supabase
+    .from('questions')
+    .select('id')
+    .eq('course', slug)
+  if (selErr) throw selErr
+
+  const ids = (data ?? []).map((q) => q.id)
+  if (ids.length) await deleteQuestions(ids)
+
+  const { error } = await supabase.from('courses').delete().eq('slug', slug)
+  if (error) throw error
+  return ids.length
+}
+
+// Set the semester every user's Home lands on at page load. Deliberately not
+// validated against the courses that exist — arming a semester before its
+// content is uploaded is a supported move (the client falls back until then).
+export async function setDefaultSemester(semester) {
+  if (previewMode()) {
+    previewMutateDb((db) => {
+      db.default_semester = semester
+    })
+    return
+  }
+
+  const { error } = await supabase.from('app_settings').upsert(
+    {
+      key: DEFAULT_SEMESTER_KEY,
+      value: semester,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' },
+  )
+  if (error) throw error
 }

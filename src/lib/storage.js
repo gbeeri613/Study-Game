@@ -3,13 +3,18 @@
 
 export const STORAGE_KEY = 'mc-exam-prep:db:v1'
 
-export const SCHEMA_VERSION = 1
+// Bumped to 2 when courses became first-class (the `courses` table + the
+// semester each one belongs to). A version-1 file still imports fine — it just
+// carries no courses, and the import screen creates them.
+export const SCHEMA_VERSION = 2
 
 export function emptyDb() {
   return {
     schema_version: SCHEMA_VERSION,
     exported_at: new Date().toISOString(),
     questions: [],
+    courses: [],
+    default_semester: null,
   }
 }
 
@@ -19,6 +24,9 @@ export function loadDb() {
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed || !Array.isArray(parsed.questions)) return null
+    // A cache written before courses existed has no `courses` key; normalize it
+    // so every consumer can treat the field as always-present.
+    if (!Array.isArray(parsed.courses)) parsed.courses = []
     return parsed
   } catch {
     return null

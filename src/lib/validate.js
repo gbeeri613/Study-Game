@@ -7,8 +7,11 @@ import { SCHEMA_VERSION } from './storage.js'
 // State fields the app owns. Ensured present (defaulting to null) on every
 // imported question so downstream code never has to guard for undefined.
 function ensureStateFields(q) {
+  // `semester` is dropped here rather than downstream: the questions table has
+  // no such column, so letting it ride along would make the upsert fail.
+  const { semester: _ignored, ...rest } = q
   return {
-    ...q,
+    ...rest,
     answered_at: q.answered_at ?? null,
     last_choice: q.last_choice ?? null,
     correct: q.correct ?? null,
@@ -44,18 +47,30 @@ function validateQuestion(q, index, seenIds) {
       error: `${label}: answer (${q.answer}) מחוץ לטווח 0..${q.options.length - 1}`,
     }
   }
+  // Non-fatal findings. A question can trip more than one, so they accumulate
+  // rather than overwrite.
+  const warnings = []
+
+  // A `semester` on a question is a leftover from an older generation prompt.
+  // Semester belongs to the COURSE now, so the field is ignored rather than
+  // rejected — old files must stay importable.
+  if (q.semester !== undefined && q.semester !== null && q.semester !== '') {
+    warnings.push(`${label}: שדה semester בשאלה — הסמסטר נקבע לפי הקורס, והשדה יתעלם`)
+  }
+
   // option_explanations is optional; if present it must be an array. A length
   // mismatch is NOT fatal — the UI degrades gracefully — but we warn.
-  let warning = null
   if (q.option_explanations !== undefined && q.option_explanations !== null) {
     if (!Array.isArray(q.option_explanations)) {
       return { ok: false, error: `${label}: option_explanations חייב להיות מערך` }
     }
     if (q.option_explanations.length !== q.options.length) {
-      warning = `${label}: אורך option_explanations אינו תואם ל-options — יוצג רק נכון/שגוי`
+      warnings.push(
+        `${label}: אורך option_explanations אינו תואם ל-options — יוצג רק נכון/שגוי`,
+      )
     }
   }
-  return { ok: true, warning }
+  return { ok: true, warnings }
 }
 
 // Validate a whole imported JSON object (or bare array of questions).
@@ -91,7 +106,7 @@ export function validateImport(json) {
     const res = validateQuestion(q, i, seenIds)
     if (res.ok) {
       seenIds.add(q.id)
-      if (res.warning) warnings.push(res.warning)
+      warnings.push(...res.warnings)
       good.push(ensureStateFields(q))
     } else {
       errors.push(res.error)
